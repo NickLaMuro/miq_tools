@@ -1,6 +1,6 @@
 require 'optparse'
 
-options = { :worker_type => nil, :pid => nil }
+options = { :worker_type => nil, :pid => nil, :pid_size => 5 }
 
 OptionParser.new do |opt|
   opt.banner = "Usage: #{File.basename $0} [options] TOP_OUTPUT_FILE [TOP_OUTPUT_FILE] ..."
@@ -17,6 +17,10 @@ OptionParser.new do |opt|
 
   opt.on("-pPID", "--pid=PID", Integer, "Specific PID to gather data for") do |pid|
     options[:pid] = pid.to_i
+  end
+
+  opt.on(         "--pid-size=NUM", Integer, "Number of digits for PIDs in top (def: 5)") do |size|
+    options[:pid_size] = size.to_i
   end
 
   opt.on("-wWORKER", "--worker-type=WORKER", String, "Worker type filter") do |type|
@@ -42,31 +46,31 @@ worker_type_regexp += options[:worker_type] if options[:worker_type]
 # Regexp for parsing the first line of the top output.  Mostly used to
 # determine the current time the top sample was taken.
 TOP_UPTIME_LINE_REGEXP = Regexp.new [
-  /top - (\d\d:\d\d:\d\d)\s*/,  # 1. Local Time
-  /up\s*(\d* days?)?,?\s*/,     # 2. Uptime days
-  /(\d?\d:\d\d|\d+ min),\s*/,   # 3. Uptime hours/min
-  /(\d* users),\s*/,            # 4. Logged in users
+  /top - (\d\d:\d\d:\d\d)\s*/,          # 1. Local Time
+  /up\s*(\d* days?)?,?\s*/,             # 2. Uptime days
+  /(\d?\d:\d\d|\d+ min),\s*/,           # 3. Uptime hours/min
+  /(\d* users?),\s*/,                   # 4. Logged in users
   /load average:\s*/,
-  /([\d\.]*),\s*/,              # 5. Load 1 min
-  /([\d\.]*),\s*/,              # 6. Load 5 min
-  /([\d\.]*)/                   # 7. Load 6 min
+  /([\d\.]*),\s*/,                      # 5. Load 1 min
+  /([\d\.]*),\s*/,                      # 6. Load 5 min
+  /([\d\.]*)/                           # 7. Load 6 min
 ].map(&:source).join
 
 # Parses a single line of the process info from the top output.
 TOP_PROC_LINE_REGEXP = Regexp.new [
-  /^([ 0-9]{5})\s/,             # 1. PID
-  /([ 0-9]{5})\s/,              # 2. Parent PID
-  /(.{10})/,                    # 3. USER
-  /(.{2})\s/,                   # 4. PR
-  /(.{3})\s/,                   # 5. NICE Increment (I think?)
-  /(.{7})\s/,                   # 6. Virtual Mem
-  /(.{6})\s/,                   # 7. RSS
-  /(.{6})\s/,                   # 8. SHR
-  /(\w)\s/,                     # 9. S
-  /(.{5})\s/,                   # 10. %CPU
-  /(.{4})\s/,                   # 11. %MEM
-  /(.{9})\s/,                   # 12. CPU TIME
-  /(.*#{worker_type_regexp})$/  # 13. CMD
+  /^([ 0-9]{#{options[:pid_size]}})\s/, # 1. PID
+  /([ 0-9]{#{options[:pid_size]}})\s/,  # 2. Parent PID
+  /(.{10})/,                            # 3. USER
+  /(.{2})\s/,                           # 4. PR
+  /(.{3})\s/,                           # 5. NICE Increment (I think?)
+  /(.{7})\s/,                           # 6. Virtual Mem
+  /(.{6})\s/,                           # 7. RSS
+  /(.{6})\s/,                           # 8. SHR
+  /(\w)\s/,                             # 9. S
+  /(.{5})\s/,                           # 10. %CPU
+  /(.{4})\s/,                           # 11. %MEM
+  /(.{9})\s/,                           # 12. CPU TIME
+  /(.*#{worker_type_regexp})$/          # 13. CMD
 ].map(&:source).join
 
 # Pulls out the date from the timesync line in the top_output files.  Used to
