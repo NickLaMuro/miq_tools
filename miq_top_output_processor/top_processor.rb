@@ -1,6 +1,6 @@
 require 'optparse'
 
-options = { :worker_type => nil, :pid => nil, :pid_size => 5 }
+options = { :worker_type => nil, :pid => nil, :pid_size => 5, :offset => 0 }
 
 OptionParser.new do |opt|
   opt.banner = "Usage: #{File.basename $0} [options] TOP_OUTPUT_FILE [TOP_OUTPUT_FILE] ..."
@@ -25,6 +25,10 @@ OptionParser.new do |opt|
 
   opt.on("-wWORKER", "--worker-type=WORKER", String, "Worker type filter") do |type|
     options[:worker_type] = "#{type}.*"
+  end
+
+  opt.on("-o", "--offset=HRS", Integer, "Offset, in hours, from top to the host machine") do |offset|
+    options[:offset] = offset.to_i
   end
 
   opt.on("-h",    "--help",                    "Show this message") do
@@ -80,11 +84,13 @@ TIMESYNC_REGEXP = /timesync: date time is-> (.*)$/
 class DateStruct
   attr_reader :date
 
+  class << self
+    attr_accessor :tz_offset
+  end
+
   def initialize(datetime_str)
     if datetime_str
-      # Converts time time from Pacific converted to Central to Central as if
-      # it were Pacific
-      @datetime      = Time.parse(datetime_str) - 2*60*60
+      @datetime      = parse_time(datetime_str) - self.class.tz_offset
 
       @date          = @datetime.strftime("%Y-%m-%d")
       @date_1_hr_ago = (@datetime - 60*60).strftime("%Y-%m-%d")
@@ -109,7 +115,21 @@ class DateStruct
       @date
     end
   end
+
+  private
+
+  # In ruby 2.2, there was a change to Time.parse where the current timezone of
+  # the host computer was no longer interpreted when calling `Time.parse`.
+  # These lines define methods so that the time parsing is consistent across
+  # ruby versions, and uses the old implementation as the common denominator.
+  if RbConfig::CONFIG["MAJOR"] == 2 && RbConfig::CONFIG["MAJOR"] > 1
+    def parse_time(time); Time.parse(time).localtime; end
+  else
+    def parse_time(time); Time.parse(time); end
+  end
 end
+
+DateStruct.tz_offset = options[:offset]
 
 data_file   = {}
 pid_buffer  = {}
