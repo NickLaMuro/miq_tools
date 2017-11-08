@@ -155,6 +155,8 @@ end
 require 'time'
 require 'bigdecimal'
 
+Dir.mkdir "top_outputs" unless Dir.exists? "top_outputs"
+
 log_files.each do |log_file|
   io_klass = if File.extname(log_file) == ".gz"
                require 'zlib'
