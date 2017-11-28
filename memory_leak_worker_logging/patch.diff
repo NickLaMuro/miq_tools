@@ -1,0 +1,64 @@
+diff -ur a/opt/rh/cfme-gemset/bundler/gems/manageiq-providers-vmware-3b785e25da13/app/models/manageiq/providers/vmware/infra_manager/metrics_collector_worker/runner.rb b/opt/rh/cfme-gemset/bundler/gems/manageiq-providers-vmware-3b785e25da13/app/models/manageiq/providers/vmware/infra_manager/metrics_collector_worker/runner.rb
+--- a/opt/rh/cfme-gemset/bundler/gems/manageiq-providers-vmware-3b785e25da13/app/models/manageiq/providers/vmware/infra_manager/metrics_collector_worker/runner.rb
++++ b/opt/rh/cfme-gemset/bundler/gems/manageiq-providers-vmware-3b785e25da13/app/models/manageiq/providers/vmware/infra_manager/metrics_collector_worker/runner.rb
+@@ -1,2 +1,20 @@
+ class ManageIQ::Providers::Vmware::InfraManager::MetricsCollectorWorker::Runner < ManageIQ::Providers::BaseManager::MetricsCollectorWorker::Runner
++  self.require_vim_broker = true
++
++  def after_initialize
++    require 'objspace'
++    ObjectSpace.trace_object_allocations_start
++  end
++
++  def deliver_queue_message(msg)
++    super msg
++    @messages_delivered ||= 0
++    @messages_delivered  += 1
++
++    if @messages_delivered % 5000 == 0
++      io=File.open("#{Rails.root}/tmp/vmware_metrics_collector_wrkr_#{Time.now.to_i}_#{Process.pid}.dump", "w")
++      ObjectSpace.dump_all(output: io)
++      io.close
++    end
++  end
+ end
+diff -ur a/var/www/miq/vmdb/app/models/miq_ems_metrics_processor_worker/runner.rb b/var/www/miq/vmdb/app/models/miq_ems_metrics_processor_worker/runner.rb
+--- a/var/www/miq/vmdb/app/models/miq_ems_metrics_processor_worker/runner.rb
++++ b/var/www/miq/vmdb/app/models/miq_ems_metrics_processor_worker/runner.rb
+@@ -1,2 +1,18 @@
+ class MiqEmsMetricsProcessorWorker::Runner < MiqQueueWorkerBase::Runner
++  def after_initialize
++    require 'objspace'
++    ObjectSpace.trace_object_allocations_start
++  end
++
++  def deliver_queue_message(msg)
++    super msg
++    @messages_delivered ||= 0
++    @messages_delivered  += 1
++
++    if @messages_delivered % 5000 == 0
++      io=File.open("#{Rails.root}/tmp/metrics_processor_wrkr_#{Time.now.to_i}_#{Process.pid}.dump", "w")
++      ObjectSpace.dump_all(output: io)
++      io.close
++    end
++  end
+ end
+diff -ur a/var/www/miq/vmdb/app/models/miq_queue_worker_base/runner.rb b/var/www/miq/vmdb/app/models/miq_queue_worker_base/runner.rb
+--- a/var/www/miq/vmdb/app/models/miq_queue_worker_base/runner.rb
++++ b/var/www/miq/vmdb/app/models/miq_queue_worker_base/runner.rb
+@@ -150,6 +150,14 @@
+       msg = get_message
+       break if msg.nil?
+       deliver_message(msg)
++      GC.start # GC after every message
++      gc_stats = GC.stat
++      info     = Sys::ProcTable::Smaps.new(Process.pid, MiqSystem.readfile_async("/proc/#{Process.pid}/smaps"))
++      _log.info "Memory Info XXXX (#{msg.inspect}) => {" \
++                "Live: #{gc_stats[:heap_live_slots]}, "  \
++                "Old: #{gc_stats[:old_objects]}, "       \
++                "RSS: #{info.rss}, "                     \
++                "PSS: #{info.pss}}"
+     end
+   end
+ 
