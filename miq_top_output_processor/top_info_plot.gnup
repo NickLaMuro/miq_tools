@@ -49,7 +49,7 @@ if (exists("ARG2")) set xrange [ARG2 : ARG3]
 unset x2tic
 
 set ylabel "Memory"
-set format y '%.1s%cB'
+set format y '%.1s %cB'
 set autoscale y
 set yrange [0: ] # axis start at 0
 set ytics nomirror # show time ticks on left only (don't want to see next to right ticks)
