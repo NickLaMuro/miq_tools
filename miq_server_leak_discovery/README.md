@@ -36,6 +36,30 @@ happen `GC.start`".
 Results:  Need more data.  Current tests have only happened on a `vagrant` VM.
 
 
+### `04_yaml_dump_loop_test`
+
+Tests part of `$log.log_hashes` which dumps the settings to a hash.
+
+Results:  The C based part of YAML dump made it suspect and since we have
+determined that this is most likely something that ruby isn't aware of (by
+studying the smaps over time), it seemed possible this could be the cause.
+
+But after further analyzing the codebase, this portion isn't reached on a
+regular basis, which doesn't match the steady increase of memory every 10 min
+or so that has been observed.  Also, it didn't really leak... so...
+
+
+### `05_miq_server_sync_needed_loop_test`
+
+Test the `sync_needed?` portion of the monitor loop, which is a part of
+`MiqServer#monitor_workers`.
+
+
+Results:  Currently showing a small bit of promise in being at least a cause of
+the leak, but even if it does leak, seems like it is only a part of it, since
+it only leaks on a large interval (every hour or so).
+
+
 
 Monitor Scripts
 ---------------
