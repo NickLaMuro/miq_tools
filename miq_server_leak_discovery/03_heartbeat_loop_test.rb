@@ -1,6 +1,10 @@
-ENV["BUNDLE_WITHOUT"] = "test:metric_fu:development"
-ENV["BUNDLE_GEMFILE"] = "/var/www/miq/vmdb/Gemfile"
-ENV["PATH"]           = "#{ENV['PATH']}:/opt/rubies/ruby-2.3.1/bin"
+# Put in /var/www/miq/vmdb on an appliance and run with the following:
+#
+#     sudo /bin/sh -c "source /etc/default/evm; ruby -I. 03_heartbeat_loop_test.rb"
+#
+# To monitor, press ctrl-z, and take the pid and run with either
+# smaps_monitor.rb or simple_memory_monitor.rb
+#
 
 puts "PID: #{Process.pid}"
 
