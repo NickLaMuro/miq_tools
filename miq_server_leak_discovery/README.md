@@ -60,6 +60,33 @@ the leak, but even if it does leak, seems like it is only a part of it, since
 it only leaks on a large interval (every hour or so).
 
 
+### `06_my_server_clear_cache_loop_test`
+
+Test the global variable usage/clearing of the `cache_with_timeout` code to see
+if it might be the cause of the leak.
+
+
+Results:  Doesn't seem like it
+
+
+### `07_kill_workers_due_to_resources_exhausted_loop_test`
+
+Test the code that is called with `kill_workers_due_to_resources_exhausted?`
+method, since it does some file reading, and is executed semi regularly.
+
+
+Results:  Doesn't seem like it
+
+
+### `08_drb_heartbeat_loop_simulation_test`
+
+Test the DRb server/client heartbeat workflow, in the smallest possible form.
+
+
+Results:  Doesn't seem like it, but this one was a pain to try and get right,
+so I might have screwed something up.
+
+
 
 Monitor Scripts
 ---------------
