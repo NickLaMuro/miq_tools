@@ -1,6 +1,6 @@
 require 'optparse'
 
-options = { :worker_type => nil, :pid => nil, :pid_size => 5, :offset => 0 }
+options = { :worker_type => nil, :pid => nil, :pid_size => 5, :has_ppid => true, :offset => 0 }
 
 OptionParser.new do |opt|
   opt.banner = "Usage: #{File.basename $0} [options] TOP_OUTPUT_FILE [TOP_OUTPUT_FILE] ..."
@@ -17,6 +17,10 @@ OptionParser.new do |opt|
 
   opt.on("-pPID", "--pid=PID", Integer, "Specific PID to gather data for") do |pid|
     options[:pid] = pid.to_i
+  end
+
+  opt.on("-P", "--[no-]ppid", [TrueClass, FalseClass], "Toggle if PPID field is present") do |has_ppid|
+    options[:has_ppid] = has_ppid
   end
 
   opt.on(         "--pid-size=NUM", Integer, "Number of digits for PIDs in top (def: 5)") do |size|
@@ -46,6 +50,8 @@ raise "Please provide a file(s) to analyze" if log_files.empty?
 worker_type_regexp  = ".*"
 worker_type_regexp += options[:worker_type] if options[:worker_type]
 
+# The +1 is to account for the space
+options[:ppid_size] = options[:has_ppid] ? options[:pid_size] + 1 : 0
 
 # Regexp for parsing the first line of the top output.  Mostly used to
 # determine the current time the top sample was taken.
@@ -63,7 +69,7 @@ TOP_UPTIME_LINE_REGEXP = Regexp.new [
 # Parses a single line of the process info from the top output.
 TOP_PROC_LINE_REGEXP = Regexp.new [
   /^([ 0-9]{#{options[:pid_size]}})\s/, # 1. PID
-  /([ 0-9]{#{options[:pid_size]}})\s/,  # 2. Parent PID
+  /([ 0-9]{#{options[:ppid_size]}})/,   # 2. Parent PID (must be stripped)
   /(.{10})/,                            # 3. USER
   /(.{2})\s/,                           # 4. PR
   /(.{3})\s/,                           # 5. NICE Increment (I think?)
