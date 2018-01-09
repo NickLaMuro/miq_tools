@@ -50,6 +50,12 @@ LOG_LINE_REGEXP = Regexp.new [
   /(\{[^\}]*\})/                       # 8. mem info
 ].map(&:source).join
 
+DATE=2
+TIME=3
+PID=5
+MSG=7
+INFO=8
+
 data_file   = nil
 current_pid = nil
 
@@ -78,18 +84,17 @@ log_files.each do |log_file|
 
   io_klass.open(log_file) do |file|
     file.each_line do |line|
-      next unless LOG_LINE_REGEXP =~ line
-      next if options[:pid] && options[:pid] != Regexp.last_match[5]
+      next unless line_match = line.match(LOG_LINE_REGEXP)
+      next if options[:pid] && options[:pid] != line_match[PID]
 
       # Close the file since we have a new pid and sets to nil
-      data_file = data_file.close if data_file && current_pid != Regexp.last_match[5]
+      data_file = data_file.close if data_file && current_pid != line_match[PID]
 
-      date        = Regexp.last_match[2]
-      time        = Regexp.last_match[3]
-      ms          = Regexp.last_match[4]
-      current_pid = Regexp.last_match[5]
-      msg         = Regexp.last_match[7]
-      info        = eval Regexp.last_match[8]
+      date        = line_match[DATE]
+      time        = line_match[TIME]
+      current_pid = line_match[PID]
+      msg         = line_match[MSG]
+      info        = eval line_match[INFO]
 
       unless data_file
         datestamp = date.gsub(/[^0-9]/, '')
