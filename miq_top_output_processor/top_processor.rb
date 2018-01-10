@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 require 'optparse'
 
 options = { :worker_type => nil, :pid => nil, :pid_size => 5, :has_ppid => true, :offset => 0 }
