@@ -195,8 +195,27 @@ class Elif
   end
 end
 
+require "optparse"
 
-watcher = SmapsWatcher.new ARGV[0].to_i
+options = {}
+
+OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [options] PID_TO_MONITOR"
+  opt.separator ""
+  opt.separator "Parses the /proc/PID_TO_MONITOR/smaps for changes, and"
+  opt.separator "outputs the diff of those changes to a log io object"
+  opt.separator "(STDOUT by default)."
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-i", "--[no-]inspect-evm-log", "After each diff, see recent evm.log entries") do |val|
+    options[:inspect_evm_log] = val
+  end
+
+  opt.on("-h", "--help", "Show this message") { puts opt; exit }
+end.parse!
+
+watcher = SmapsWatcher.new ARGV[0].to_i, options
 loop do
   puts watcher.smaps_diff
   sleep 10
