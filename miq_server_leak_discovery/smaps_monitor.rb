@@ -19,6 +19,7 @@ class SmapsWatcher
     }.merge opts
 
     setup_logger
+    set_proctitle
   end
 
   def log_diff
@@ -40,6 +41,10 @@ class SmapsWatcher
       message = msg.split("\n").join("\n" + " " * prefix.length)
       "#{prefix}#{message}\n"
     end
+  end
+
+  def set_proctitle
+    Process.setproctitle "SmapsWatcher:  watching #{@filename}"
   end
 
   # Parse the smaps file and get the current smaps data
