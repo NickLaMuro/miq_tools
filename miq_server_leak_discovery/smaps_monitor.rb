@@ -1,3 +1,6 @@
+require "logger"
+require "optparse"
+
 class SmapsWatcher
   MAP_LINE_REGEXP      = /^[\-0-9a-f]+\s[\-a-z]{4}\s\d{8}\s[a-z0-9]{2}:[a-z0-9]{2}\s\d+\s+(.*)$/
   SIZE_SMAPS_REGEXP    = /^Size:\s+?(\d+)/
@@ -11,8 +14,15 @@ class SmapsWatcher
     @filename       = "/proc/#{pid}/smaps"
     @previous_smaps = {}
     @opts           = {
-      :inspect_evm_log => false
+      :inspect_evm_log => false,
+      :logfile         => STDOUT
     }.merge opts
+
+    setup_logger
+  end
+
+  def log_diff
+    @logger.info smaps_diff
   end
 
   def smaps_diff
@@ -21,6 +31,16 @@ class SmapsWatcher
   end
 
   private
+
+  def setup_logger
+    @logger = Logger.new @opts[:logfile]
+
+    @logger.formatter = proc do |severity, datetime, progname, msg|
+      prefix = "#{datetime.strftime '%Y-%m-%dT%H:%M:%S'}: "
+      message = msg.split("\n").join("\n" + " " * prefix.length)
+      "#{prefix}#{message}\n"
+    end
+  end
 
   # Parse the smaps file and get the current smaps data
   def parse_smaps_file
@@ -195,8 +215,6 @@ class Elif
   end
 end
 
-require "optparse"
-
 options = {}
 
 OptionParser.new do |opt|
@@ -208,6 +226,10 @@ OptionParser.new do |opt|
   opt.separator ""
   opt.separator "Options"
 
+  opt.on("-l", "--log-file=FILENAME",    "Logfile to send output to") do |val|
+    options[:logfile] = val
+  end
+
   opt.on("-i", "--[no-]inspect-evm-log", "After each diff, see recent evm.log entries") do |val|
     options[:inspect_evm_log] = val
   end
@@ -217,6 +239,6 @@ end.parse!
 
 watcher = SmapsWatcher.new ARGV[0].to_i, options
 loop do
-  puts watcher.smaps_diff
+  watcher.log_diff
   sleep 10
 end
