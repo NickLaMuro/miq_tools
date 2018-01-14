@@ -10,7 +10,9 @@ class SmapsWatcher
   def initialize pid, opts = {}
     @filename       = "/proc/#{pid}/smaps"
     @previous_smaps = {}
-    @opts           = opts
+    @opts           = {
+      :inspect_evm_log => false
+    }.merge opts
   end
 
   def smaps_diff
@@ -81,18 +83,23 @@ class SmapsWatcher
           msg <<  "#{' '.to_s.ljust(max_lineno)}    new: #{diff[:new].inspect}\n"
         end
 
-        log_line_count = 0
-        msg << "\n\n#{Time.now}\n".tap do |log_lines|
-          Elif.foreach("/var/www/miq/vmdb/log/evm.log") do |line|
-            if line.match MIQSERVER_LOG_REGEXP
-              log_lines << Regexp.last_match[1]
-              log_lines << "] "
-              log_lines << Regexp.last_match[2]
-              log_lines << "\n"
-              log_line_count += 1
-              break if log_line_count >= 5
-            end
-          end
+        msg << last_few_lines_of_evm_log if @opts[:inspect_evm_log]
+      end
+    end
+  end
+
+  def last_few_lines_of_evm_log
+    log_line_count = 0
+
+    "\n\n#{Time.now}\n".tap do |log_lines|
+      Elif.foreach("/var/www/miq/vmdb/log/evm.log") do |line|
+        if line.match MIQSERVER_LOG_REGEXP
+          log_lines << Regexp.last_match[1]
+          log_lines << "] "
+          log_lines << Regexp.last_match[2]
+          log_lines << "\n"
+          log_line_count += 1
+          break if log_line_count >= 5
         end
       end
     end
