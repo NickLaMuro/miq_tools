@@ -4,11 +4,15 @@ require "util/miq-process"
 require "active_support/all"
 
 pid = ARGV[0].to_i
+proctitle = "Testing MiqProcess.processInfo(#{pid})"
+
+Process.setproctitle proctitle
 
 PROCESS_INFO_FIELDS = %i(priority memory_usage percent_memory percent_cpu memory_size cpu_time proportional_set_size unique_set_size)
 
 
 puts "PID: #{Process.pid}"
+puts "Proctitle: #{proctitle}"
 puts "Starting loop..."
 
 loop do
