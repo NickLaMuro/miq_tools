@@ -6,16 +6,29 @@ class SmapsWatcher
   SWAP_SMAPS_REGEXP    = /^Swap:\s+?(\d+)/
   USS_SMAPS_REGEXP     = /^Private_(Clean|Dirty):\s+?(\d+)/
   MIQSERVER_LOG_REGEXP = /^\[----\] [A-Z], (\[[-0-9]*T[0-9:]*\.[0-9]*) #[0-9]*:[a-z0-9]*\] +([A-Z]{0,5} -- [^:]*: MIQ\(MiqServer.*)$/
-  def self.smaps_diff(pid)
-    filename             = "/proc/#{pid}/smaps"
-    @previous_smaps    ||= {}
+
+  def initialize pid, opts = {}
+    @filename       = "/proc/#{pid}/smaps"
+    @previous_smaps = {}
+    @opts           = opts
+  end
+
+  def smaps_diff
+    diff = determine_diff parse_smaps_file
+    output diff
+  end
+
+  private
+
+  # Parse the smaps file and get the current smaps data
+  def parse_smaps_file
     current_smaps        = {}
     current_smaps_lineno = 0
     lineno = 0
 
     # Prefer slurping up the entire file here since this is a psuedo file.
     # This should get garbage collected anyway, so should be fine.
-    File.read("/proc/#{pid}/smaps").each_line do |line|
+    File.read(@filename).each_line do |line|
       lineno += 1
       # puts line
       case line
@@ -36,7 +49,12 @@ class SmapsWatcher
       end
     end
 
-    # Diff current_smaps and previous_smaps
+    current_smaps
+  end
+
+  # Diff current_smaps and previous_smaps, and replace the previous_smaps with
+  # the current once finished.
+  def determine_diff current_smaps
     diff = {}
     current_smaps.each do |lnum, map|
       map.each do |key, val|
@@ -48,12 +66,15 @@ class SmapsWatcher
     end unless @previous_smaps.keys.empty?
 
     @previous_smaps = current_smaps
+    diff
+  end
 
-    # Print results
+  # Return the output of the diff report.
+  def output diff
     if diff.keys.empty?
-      "NO Difference detected in #{filename}"
+      "NO Difference detected in #{@filename}"
     else
-      "SMAPS Difference detected in #{filename}\n".tap do |msg|
+      "SMAPS Difference detected in #{@filename}\n".tap do |msg|
         max_lineno = diff.keys.max.to_s.length
         diff.each do |lnum,diff|
           msg << "#{lnum.to_s.ljust(max_lineno)} => old: #{diff[:old].inspect}\n"
@@ -168,7 +189,8 @@ class Elif
 end
 
 
+watcher = SmapsWatcher.new ARGV[0].to_i
 loop do
-  puts SmapsWatcher.smaps_diff ARGV[0].to_i
+  puts watcher.smaps_diff
   sleep 10
 end
