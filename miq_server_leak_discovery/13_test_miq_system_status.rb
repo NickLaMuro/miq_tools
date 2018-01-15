@@ -1,9 +1,10 @@
-require "config/environment"
+require "config/environment" unless ENV["WITHOUT_MIQ_ENV"]
 require "manageiq-gems-pending"
 require "util/miq-process"
 require "active_support/all"
 
-proctitle = "Testing MiqSystem.status[:cpu]"
+proctitle  = "Testing MiqSystem.status[:cpu]"
+proctitle += " without manageiq environment" if ENV["WITHOUT_MIQ_ENV"]
 
 Process.setproctitle proctitle
 
