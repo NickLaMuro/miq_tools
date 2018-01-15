@@ -12,6 +12,7 @@ puts "PID: #{Process.pid}"
 puts "Proctitle: #{proctitle}"
 puts "Starting loop..."
 
+do_gc = nil
 loop do
   require 'linux_admin'
 

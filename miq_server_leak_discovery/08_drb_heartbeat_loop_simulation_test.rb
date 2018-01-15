@@ -39,6 +39,8 @@ end
 
 # Server monitor loop
 puts "starting loop..."
+
+do_gc = nil
 loop do
   worker_pids.each do |pid|
     (rand(5) + 1).times { server.worker_add_message pid, "foo" }

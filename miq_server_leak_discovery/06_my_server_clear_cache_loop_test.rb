@@ -5,6 +5,8 @@ require 'config/environment.rb'
 server   = MiqServer.my_server
 
 puts "starting loop..."
+
+do_gc = nil
 loop do
   server.class.my_server_clear_cache
   MiqServer.my_server

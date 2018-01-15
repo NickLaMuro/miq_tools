@@ -13,6 +13,7 @@ puts "PID: #{Process.pid}"
 puts "Proctitle: #{proctitle}"
 puts "Starting loop..."
 
+do_gc = nil
 loop do
   MiqProcess.linux_process_stat pid
 

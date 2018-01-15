@@ -12,6 +12,8 @@ require 'config/environment.rb'
 server = MiqServer.my_server
 
 puts "starting loop..."
+
+do_gc = nil
 loop do
   server.heartbeat
   (GC.start; do_gc = false)   if do_gc  && Time.now.min % 2 == 0

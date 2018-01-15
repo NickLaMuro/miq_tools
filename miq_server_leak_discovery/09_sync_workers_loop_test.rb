@@ -54,6 +54,8 @@ module MiqWebServerWorkerMixin
 end
 
 puts "starting loop..."
+
+do_gc = nil
 loop do
   MiqServer.monitor_class_names.each do |class_name|
     class_name.constantize.sync_workers

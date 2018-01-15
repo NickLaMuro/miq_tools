@@ -16,6 +16,7 @@ puts "PID: #{Process.pid}"
 puts "Proctitle: #{proctitle}"
 puts "Starting loop..."
 
+do_gc = nil
 loop do
   pinfo = MiqProcess.processInfo(pid)
   pinfo.slice!(*PROCESS_INFO_FIELDS)
