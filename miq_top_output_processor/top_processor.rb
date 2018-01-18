@@ -16,6 +16,10 @@ OptionParser.new do |opt|
   opt.separator ""
   opt.separator "Options"
 
+  opt.on("-o", "--offset=HRS", Integer, "Offset, in hours, from top to the host machine") do |offset|
+    options[:offset] = offset.to_i
+  end
+
   opt.on("-pPID", "--pid=PID", Integer, "Specific PID to gather data for") do |pid|
     options[:pid] = pid.to_i
   end
@@ -30,10 +34,6 @@ OptionParser.new do |opt|
 
   opt.on("-wWORKER", "--worker-type=WORKER", String, "Worker type filter") do |type|
     options[:worker_type] = "#{type}.*"
-  end
-
-  opt.on("-o", "--offset=HRS", Integer, "Offset, in hours, from top to the host machine") do |offset|
-    options[:offset] = offset.to_i
   end
 
   opt.on("-h",    "--help",                    "Show this message") do
