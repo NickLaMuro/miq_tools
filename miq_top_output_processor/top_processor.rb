@@ -1,7 +1,14 @@
 #!/usr/bin/env ruby
 require 'optparse'
 
-options = { :worker_type => nil, :pid => nil, :pid_size => 5, :has_ppid => true, :offset => 0 }
+options = {
+  :offset => 0,
+  :pid => nil,
+  :has_ppid => true,
+  :pid_size => 5,
+  :worker_type => nil,
+  :verbose => true
+}
 
 OptionParser.new do |opt|
   opt.banner = "Usage: #{File.basename $0} [options] TOP_OUTPUT_FILE [TOP_OUTPUT_FILE] ..."
@@ -34,6 +41,10 @@ OptionParser.new do |opt|
 
   opt.on("-wWORKER", "--worker-type=WORKER", String, "Worker type filter") do |type|
     options[:worker_type] = "#{type}.*"
+  end
+
+  opt.on("-v", "--[no-]verbose", [TrueClass, FalseClass], "Toggle extra debugging (def: true)") do |verbose|
+    options[:verbose] = verbose
   end
 
   opt.on("-h",    "--help",                    "Show this message") do
@@ -205,6 +216,7 @@ log_files.each do |log_file|
           datestamp = date.date.gsub(/[^0-9]/, '')
           filename  = "top_outputs/#{datestamp}_#{current_pid}.data"
 
+          puts "creating new file:  #{filename}" if options[:verbose]
           data_file[current_pid] = File.open(filename, :mode => "w")
         end
 
