@@ -155,21 +155,7 @@ date        = DateStruct.new(nil)
 
 current_pid, time, cpu1, cpu5, cpu15 = nil
 
-
-# Mem values from top are in KB
-def to_bytes mem_val
-  if mem_val.include? 'g'
-    # Gigs to bytes
-    (BigDecimal.new(mem_val) * 1000000000).to_i
-  elsif mem_val.include? 'm'
-    # MB to bytes
-    (BigDecimal.new(mem_val) * 1000000).to_i
-  else
-    # kb to bytes
-    mem_val.to_i * 1000
-  end
-end
-
+$: << File.expand_path(File.join("..", "..", "util"), __FILE__)
 require 'time'
 require 'bigdecimal'
 
@@ -206,9 +192,9 @@ log_files.each do |log_file|
         end
 
         current_pid = Regexp.last_match[1].to_i
-        virt        = to_bytes(Regexp.last_match[6])
-        res         = to_bytes(Regexp.last_match[7])
-        shr         = to_bytes(Regexp.last_match[8])
+        virt        = ByteFormatter.to_bytes(Regexp.last_match[6])
+        res         = ByteFormatter.to_bytes(Regexp.last_match[7])
+        shr         = ByteFormatter.to_bytes(Regexp.last_match[8])
 
         if data_file[current_pid] && data_file[current_pid].closed?
           data_file[current_pid].reopen(data_file[current_pid].path, "a")
