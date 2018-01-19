@@ -10,7 +10,6 @@ old_memory_count = 1 # number of times this has been the same value
 value = nil          # value to display
 
 loop do
-  puts Sys::ProcTable.ps(ARGV[0].to_i).rss
   new_memory = Sys::ProcTable.ps(ARGV[0].to_i).rss
   if old_memory != new_memory
     value = "#{delimit(new_memory)}#{old_memory ? " (𝛥#{delimit(new_memory - old_memory)})" : ""}"
