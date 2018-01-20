@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# usage: sync_dumps_and_logs [-UPDlir] -H HOST
+#
+# Given the IP address, the script will ssh to the server, update necessary
+# files as needed (remove old temp files, gzip dumps, etc.), then rsync the
+# files into the appropriate directories for you.
+#
+# This script uses `expect` to make this completely automated when using an
+# username and password (yes, we could copy a SSH key, but these servers are
+# throwaway... and don't hold sensitive data... also #DealWithIt...)
+#
+# Options:
+#
+#     -H HOST      Remote Hostname of the server to connect to (required)
+#     -U USER      Remote Username of the server to connect to (def: root)
+#     -P PASS      Remote Password of the server to connect to (def: pass)
+#     -l LOGDIR    Local directory to copy logs to      (def: mem_prof_logs)
+#     -d DUMPDIR   Local directory to copy mem dumps to (def: mem_prof_dumps)
+#     -i           Prefix nest the log/dump dirs with the host_ip as a dir
+#     -r           'Dry Run':  Run rsync with '--dry-run' and '-v'
+#
+
+# You might be asking yourself "Hey Nick, WTF is that sed non-sense below".
+#
+# Well, glad you asked!
+#
+# Simply put, it is a set of sed commands to read the comments above this one,
+# and print it out, minus the comment characters and first whitespace char,
+# which will then produce our help info.
+# 
+# Specifically, in order, each of the these `-e` args are a seperate command to
+# execute, in order, for each line of this file (though, this never really ends
+# up getting to the end of the file... more on that below):
+#
+#    * '1,2d' will run the 'd' command on the first two lines when parsing this
+#      file.  That will simply no print that output, skip running any other
+#      '-e' commands, and start on the next line
+#    * '3,$ s/^# \{0,1\}\(.*\)$/\1/' simply matches any comment char until the
+#      end of the file, and prints the line, minus the '#' and the first
+#      whitespace char following (if it exists).  The blank lines are desired
+#      for formatting, hence the `\{0,1\}` bit.
+#    * 'tx` is a jump statement, and will execute if there was a match on this
+#      line in anything preceeding it.  If not, it is effectively a no-op.  If
+#      there was a match in one of the previous commands, it will jump to the
+#      ':x' command.
+#    * 'c\' Since there wasn't a match with this line, don't print, at least for
+#      our purposes (this is a bit of a hack, since 'd' would cause the next
+#      line to never get triggered).
+#    * 'q' and quits... duh.  That said, the ':x' in the next command, and the
+#      previous '1,2d' commands are important, because they avoid this command
+#      since they either start the execution of all the commands over on the
+#      next line, or are after this one.
+#
+# The 'q' is necessary, instead of another 'd', because this comment or others
+# are not wanted in the help output for the command, and are just reference for
+# developers.  So the help docs at the top of the file just need to be
+# seperated by a single blank line, or some code that isn't a comment, and then
+# that is where they stop when being printed via the '-h' flag.
+#
+# There you have it. TMYK!   (ﾉ☉ヮ⚆)ﾉ ⌒*:･ﾟ✧
+#
+help() {
+  sed -e'1,2d' -e'3,$ s/^# \{0,1\}\(.*\)$/\1/' -e'tx' -e'c\' -e'q' -e':x' $0
+}
+
+NextDateStamp=$(date -v+1d "+%Y%m%d")
+
+RemoteUser=root
+RemotePass=smartvm
+LocalLogDir=tmp/mem_prof_logs
+LocalDumpDir=tmp/mem_prof_dumps
+DryRun=""
+
+while getopts "h?H:U:P:d:l:ir" opt; do
+  case "$opt" in
+  h) help
+     exit 0
+     ;;  
+  H) RemoteHost=${OPTARG} ;; 
+  U) RemoteUser=${OPTARG} ;;
+  P) RemotePass=${OPTARG} ;;
+  d) LocalDumpDir=${OPTARG} ;;
+  l) LocalLogDir=${OPTARG} ;;
+  i) IpDirs="1" ;;
+  r) DryRun="--dry-run -v" ;;
+  esac
+done
+
+if [[ "$IpDirs" == "1" ]]; then
+  IpDir=$(echo $RemoteHost | tr "." "-")
+  LocalLogDir="$LocalLogDir/$IpDir"
+  LocalDumpDir="$LocalDumpDir/$IpDir"
+fi
+
+mkdir -p $LocalLogDir
+mkdir -p $LocalDumpDir
+
+run_ssh_cmd() {
+  expect -c "
+  set timeout -1
+  spawn $1
+  expect \"?assword:\"
+  send \"$RemotePass\r\"
+  expect eof
+  "
+}
+
+todays_partial_evm_log="/var/www/miq/vmdb/tmp/evm.log-$NextDateStamp.partial"
+todays_partial_top_log="/var/www/miq/vmdb/tmp/top_output.log-$NextDateStamp.partial"
+
+SSH_CMDS="ls /var/www/miq/vmdb/tmp/*.dump | xargs gzip;"
+SSH_CMDS="$SSH_CMDS rm -f /var/www/miq/vmdb/tmp/*.partial"
+SSH_CMDS="$SSH_CMDS && rm -f /var/www/miq/vmdb/tmp/*.partial.gz"
+SSH_CMDS="$SSH_CMDS && cp /var/www/miq/vmdb/log/evm.log $todays_partial_evm_log"
+SSH_CMDS="$SSH_CMDS && gzip $todays_partial_evm_log"
+SSH_CMDS="$SSH_CMDS && cp /var/www/miq/vmdb/log/top_output.log $todays_partial_top_log"
+SSH_CMDS="$SSH_CMDS && gzip $todays_partial_top_log"
+
+run_ssh_cmd "ssh $RemoteUser@$RemoteHost \"$SSH_CMDS\""
+
+log_includes="--include=evm.log-*.gz --include=top_output.log-*.gz --exclude=* " 
+run_ssh_cmd "rsync -avz $log_includes $DryRun $RemoteUser@$RemoteHost:/var/www/miq/vmdb/log/ $LocalLogDir"
+
+tmp_includes="--include=*.dump.gz --include=*.partial.gz --exclude=* "
+run_ssh_cmd "rsync -avz $tmp_includes $DryRun $RemoteUser@$RemoteHost:/var/www/miq/vmdb/tmp/ $LocalDumpDir"
+
+rm -rf $LocalDumpDir/cache
+rm -rf $LocalDumpDir/pids
+rm -rf $LocalDumpDir/sockets
+mkdir -p $LocalLogDir/old
+mv $LocalLogDir/*.partial.gz $LocalLogDir/old/
+mv $LocalDumpDir/*.partial.gz $LocalLogDir/
