@@ -1,0 +1,105 @@
+#!/bin/bash
+#
+# usage: plot_all [-sfpoHUPDlirSE] LOG_FILES_TO_PROCESS
+#
+# Convenience script for collecting and ploting the data from top_output.log
+# from a MIQ/CFME appliance for all of the workers, given a evmserverd snapshot
+# file (output from `systemctl status evmserverd`)
+#
+# This script will also call out to sync_dumps_and_logs if the `-s` option is
+# provided.  Options from that scripted are mirrored in this one, and will be
+# passed down to sync_dumps_and_logs.
+#
+# Options:
+#
+#     -s           Call sync_dumps_and_logs prior
+#     -f           File of systemctl output for evmserverd
+#     -p           Prefix for graph title
+#     -u           Suffix for graph title
+#     -o           Open created graphs after generated
+#     -h           Print this help
+#
+# sync_dumps_and_logs Options:
+#
+#     -H HOST      Remote Hostname to pass to sync_dumps_and_logs
+#     -U USER      Remote Username to pass to sync_dumps_and_logs
+#     -P PASS      Remote Password to pass to sync_dumps_and_logs
+#     -l LOGDIR    Local directory to pass to sync_dumps_and_logs
+#     -d DUMPDIR   Local directory to pass to sync_dumps_and_logs
+#     -i           Prefix to pass to sync_dumps_and_logs
+#     -r           Run rsync with '--dry-run' and '-v'
+#
+# graph Options:
+#
+#     -S           Start datetime for all of the graphs
+#     -E           End datetime for all of the graphs (requires -S)
+#
+
+help() {
+  sed -e'1,2d' -e'3,$ s/^# \{0,1\}\(.*\)$/\1/' -e'tx' -e'c\' -e'q' -e':x' $0
+}
+
+SYNC_ARGS=""
+
+while getopts "h?sf:p:u:oH:U:P:d:l:irS:E:" opt; do
+  case "$opt" in
+  h) help
+     exit 0
+     ;;  
+  s) SHOULD_SYNC="1" ;;
+  f) EVMSERVERD_FILE=${OPTARG} ;;
+  p) PREFIX=${OPTARG} ;;
+  u) SUFFIX=${OPTARG} ;;
+  o) OPEN_GRAPHS="1" ;;
+  H) SYNC_ARGS="-H ${OPTARG} $SYNC_ARGS" ;; 
+  U) SYNC_ARGS="-U ${OPTARG} $SYNC_ARGS" ;;
+  P) SYNC_ARGS="-P ${OPTARG} $SYNC_ARGS" ;;
+  d) SYNC_ARGS="-d ${OPTARG} $SYNC_ARGS" ;;
+  l) SYNC_ARGS="-l ${OPTARG} $SYNC_ARGS" ;;
+  i) SYNC_ARGS="$SYNC_ARGS -i" ;;
+  r) SYNC_ARGS="$SYNC_ARGS -r" ;;
+  S) GRAPH_START=${OPTARG} ;;
+  E) GRAPH_END=${OPTARG} ;;
+  esac
+done
+shift "$((OPTIND-1))"
+
+root_dir=`dirname $(dirname $0)`
+
+if [[ "$SHOULD_SYNC" == "1" ]]; then
+  $root_dir/util/sync_dumps_and_logs $SYNC_ARGS
+fi
+
+if [[ "$EVMSERVERD_FILE" != "" ]]; then
+  pids=`sed -E -e "s/^ +(├─|└─) *([[:digit:]]*).*/\2/" -e "tx" -e "d" -e ":x" $EVMSERVERD_FILE`
+fi
+
+WORKER_TYPE_REGEXP="(MIQ Server.*|MIQ: .*|puma)"
+
+graphs=""
+data_files=`ruby $root_dir/miq_top_output_processor/top_processor.rb \
+                   --worker-type "$WORKER_TYPE_REGEXP" -v $*           \
+                 | sed 's/creating new file: *//'`
+
+for pid in $pids; do
+  data_file=`echo "$data_files" | grep _$pid.data`
+  TITLE="$PREFIX #$pid"
+  TITLE="$TITLE \"$(sed -E -e "s/^ +(├─|└─) *$pid *(.*)/\2/" -e "tx" -e "d" -e ":x" $EVMSERVERD_FILE)\""
+  TITLE="$TITLE $SUFFIX"
+  TITLE=${TITLE//_/\\_}
+
+  TITLE=$TITLE $root_dir/miq_top_output_processor/top_info_plot.gnup \
+               $data_file $GRAPH_START $GRAPH_END
+
+  output_file=${data_file/.data/.png}
+  graphs="$graphs $output_file"
+
+  # Output the generated graphs if not opening them
+  if [[ $? == 0 && "$OPEN_GRAPHS" != "1" ]]; then
+    echo "Generated $output_file"
+  fi
+done
+
+if [[ "$OPEN_GRAPHS" == "1" ]]; then
+  open $graphs
+fi
