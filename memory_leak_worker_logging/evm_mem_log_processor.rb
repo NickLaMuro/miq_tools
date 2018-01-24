@@ -40,7 +40,7 @@ worker_type_regexp += options[:worker_type] if options[:worker_type]
 
 LOG_LINE_REGEXP = Regexp.new [
   /(?<SEVERITY_CHAR>[A-Z]), \[/,       # 1. severity char
-  /(?<DATE_STRING>[-0-9]*)T/,          # 2. date
+  /(?<date>[-0-9]*)T/,                 # 2. date
   /(?<TIME>[0-9:]*\.)/,                # 3. Ttime
   /(?<MS>[0-9]*) #/,                   # 4. .ms
   /(?<PID>[0-9]*):/,                   # 5. #pid
@@ -51,9 +51,6 @@ LOG_LINE_REGEXP = Regexp.new [
   /(?<MSG>\([^\)]*\) )?=> /,           # 7. msg (queue msg, etc)
   /(?<MEM_INFO>\{[^\}]*\})/            # 8. mem info
 ].map(&:source).unshift(/^\[----\] /.source).join
-
-data_file   = nil
-current_pid = nil
 
 dir_names = log_files.map {|f| File.dirname(f) }.uniq
 raise "ETOOMANYDIRS: gather all sources from a single dir, or pass -d" if dir_names.count > 1
@@ -70,42 +67,36 @@ unless Dir.exists?(output_dir) && Dir.exists?(dumps_dir)
   FileUtils.mkdir_p [output_dir, dumps_dir]
 end
 
-log_files.each do |log_file|
-  io_klass = if File.extname(log_file) == ".gz"
-               require 'zlib'
-               Zlib::GzipReader
-             else
-               File
-             end
+$: << File.expand_path(File.join("..", "..", "util"), __FILE__)
+require 'multi_file_log_parser'
 
-  io_klass.open(log_file) do |file|
-    file.each_line do |line|
-      next unless line_match = line.match(LOG_LINE_REGEXP)
-      next if options[:pid] && options[:pid] != line_match["PID"]
+parser_options = {
+  :id         => options[:pid],
+  :id_col     => "PID",
+  :output_dir => output_dir
+}
 
-      # Close the file since we have a new pid and sets to nil
-      data_file = data_file.close if data_file && current_pid != line_match["PID"]
+impulse_data   = {}
+line_matchers  = {
+  LOG_LINE_REGEXP => ->(pid, data_file, line_match, _) {
+    if impulse_data[pid].nil?
+      impulse_data[pid] = true
+      datestamp         = line_match["_datestamp"]
 
-      current_pid = line_match["PID"]
-      info        = eval line_match["MEM_INFO"]
-
-      unless data_file
-        datestamp = line_match["DATE_STRING"].gsub(/[^0-9]/, '')
-        filename  = File.join output_dir, "#{datestamp}_#{current_pid}.data"
-        data_file = File.open(filename, :mode => "w")
-
-        # TODO:  The code below assumes the timesstamps are in pacific, and the
-        # current timezone is in central.  Needs to be made more universal.
-        File.write File.join(output_dir, "#{datestamp}_#{current_pid}.impulses"),
-                   Dir.glob(File.join dumps_dir, "*_#{current_pid}.dump.gz")
-                      .map { |file| File.basename(file).split("_")[-2].to_i }
-                      .map { |time| (Time.at(time).utc + -14400).strftime("%Y-%m-%dT%H:%M:%S 2000000000") }
-                      .join("\n")
-      end
-
-      data_file.puts "#{line_match["DATE_STRING"]}T#{line_match["TIME"]} " \
-                     "#{info[:PSS]} #{info[:RSS]} "                 \
-                     "#{info[:Live]} #{info[:Old]}"
+      # TODO:  The code below assumes the timesstamps are in pacific, and the
+      # current timezone is in central.  Needs to be made more universal.
+      File.write File.join(output_dir, "#{datestamp}_#{pid}.impulses"),
+                 Dir.glob(File.join dumps_dir, "*_#{pid}.dump.gz")
+                    .map { |file| File.basename(file).split("_")[-2].to_i }
+                    .map { |time| (Time.at(time).utc + -14400).strftime("%Y-%m-%dT%H:%M:%S 2000000000") }
+                    .join("\n")
     end
-  end
-end
+
+    info = eval line_match["MEM_INFO"]
+    data_file[pid].puts "#{line_match["date"]}T#{line_match["TIME"]} " \
+                        "#{info[:PSS]} #{info[:RSS]} "                 \
+                        "#{info[:Live]} #{info[:Old]}"
+  }
+}
+
+MultiFileLogParser.parse log_files, parser_options, line_matchers
