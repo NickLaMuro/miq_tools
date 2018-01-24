@@ -106,96 +106,56 @@ require 'byte_formatter'
 require 'time'
 require 'bigdecimal'
 require 'date_string_struct'
+require 'multi_file_log_parser'
 
 DateStringStruct.tz_offset = options[:offset]
 
 data_file   = {}
 pid_buffer  = {}
-date        = DateStringStruct.new(nil)
-
-current_pid, time, cpu1, cpu5, cpu15 = nil
+date_struct  = DateStringStruct.new(nil)
 
 Dir.mkdir "top_outputs" unless Dir.exists? "top_outputs"
 
-log_files.each do |log_file|
-  io_klass = if File.extname(log_file) == ".gz"
-               require 'zlib'
-               Zlib::GzipReader
-             else
-               File
-             end
+parser_options = {
+  :id         => options[:pid],
+  :id_col     => "PID",
+  :output_dir => "top_outputs",
+  :verbose    => options[:verbose]
+}
 
-  io_klass.open(log_file) do |file|
-    lineno = 0
-    file.each_line do |line|
-      lineno += 1
+line_matchers  = {
+  TOP_UPTIME_LINE_REGEXP => nil,
+  TOP_PROC_LINE_REGEXP   => ->(pid, data_file, match_buffer, lineno) {
+    pid_buffer[pid] ||= []
+    pid_buffer[pid] << {
+      :date => date_struct.set_for_time(match_buffer["LOCAL_TIME"]),
+      :time => match_buffer["LOCAL_TIME"],
+      :pid  => pid,
+      :virt => ByteFormatter.to_bytes(match_buffer["VIRT"]),
+      :res  => ByteFormatter.to_bytes(match_buffer["RSS"]),
+      :shr  => ByteFormatter.to_bytes(match_buffer["SHR"]),
+    }
+    next if data_file[pid].nil? || data_file[pid].closed?
 
-      case line
-      when TOP_UPTIME_LINE_REGEXP
-        time  = Regexp.last_match["LOCAL_TIME"]
-        cpu1  = Regexp.last_match["LOAD_1"]
-        cpu5  = Regexp.last_match["LOAD_5"]
-        cpu15 = Regexp.last_match["LOAD_15"]
+    until pid_buffer[pid].empty?
+      info = pid_buffer[pid].shift
 
-      when TOP_PROC_LINE_REGEXP
-        next if options[:pid] && Regexp.last_match["PID"].strip != options[:pid]
+      data_file[pid].puts "#{info[:date]}T#{info[:time]} " \
+                          "#{info[:res]} #{info[:virt]} "  \
+                          "#{info[:shr]} #{lineno}"
+    end if pid_buffer[pid]
+  },
+  TIMESYNC_REGEXP        => ->(pid, data_file, match_buffer, _) {
+    date_struct = DateStringStruct.new match_buffer["DATE_STRING"]
+    match_buffer["date"] = date_struct.date
 
-        # Close the file since we have a new pid, and chances are the file will
-        # not need to be re-opened.
-        if data_file[current_pid] && current_pid != Regexp.last_match["PID"].strip
-          data_file[current_pid].close
-        end
-
-        current_pid = Regexp.last_match["PID"].strip
-        virt        = ByteFormatter.to_bytes(Regexp.last_match["VIRT"])
-        rss         = ByteFormatter.to_bytes(Regexp.last_match["RSS"])
-        shr         = ByteFormatter.to_bytes(Regexp.last_match["SHR"])
-
-        if data_file[current_pid] && data_file[current_pid].closed?
-          data_file[current_pid].reopen(data_file[current_pid].path, "a")
-        elsif current_pid and data_file[current_pid].nil? and not date.date.nil?
-          datestamp = date.date.gsub(/[^0-9]/, '')
-          filename  = "top_outputs/#{datestamp}_#{current_pid}.data"
-
-          puts "creating new file:  #{filename}" if options[:verbose]
-          data_file[current_pid] = File.open(filename, :mode => "w")
-        end
-
-        pid_buffer[current_pid] ||= []
-        pid_buffer[current_pid] << {
-          :date => date.set_for_time(time),
-          :time => time,
-          :pid  => current_pid,
-          :virt => virt,
-          :res  => rss,
-          :shr  => shr,
-        }
-        next if data_file[current_pid].nil? || data_file[current_pid].closed?
-
-        until pid_buffer[current_pid].empty?
-          info = pid_buffer[current_pid].shift
-
-          begin
-            data_file[current_pid].puts "#{info[:date]}T#{info[:time]} #{info[:res]} #{info[:virt]} #{info[:shr]} #{lineno}"
-          rescue => e
-            puts data_file.inspect
-            puts line
-            raise e
-          end
-        end if pid_buffer[current_pid]
-
-      when TIMESYNC_REGEXP
-        date = DateStringStruct.new Regexp.last_match["DATE_STRING"]
-
-        (pid_buffer[current_pid] || []).each do |entry|
-          puts entry unless entry[:time]
-          entry[:date] = date.set_for_time(entry[:time]) unless entry[:date]
-        end
+    pid_buffer.each do |_, buffer|
+      (buffer || []).each do |entry|
+        puts entry unless entry[:time] #debug
+        entry[:date] = date_struct.set_for_time(entry[:time]) unless entry[:date]
       end
     end
-  end
-end
+  }
+}
 
-data_file.each do |_, file|
-  file.close unless file.closed?
-end
+MultiFileLogParser.parse log_files, parser_options, line_matchers
