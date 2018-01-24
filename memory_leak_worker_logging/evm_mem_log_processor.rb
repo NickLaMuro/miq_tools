@@ -39,24 +39,18 @@ worker_type_regexp  = ".*"
 worker_type_regexp += options[:worker_type] if options[:worker_type]
 
 LOG_LINE_REGEXP = Regexp.new [
-  /^\[----\] ([A-Z]), /,               # 1. severity char
-  /\[([-0-9]*)/,                       # 2. date
-  /T([0-9:]*)/,                        # 3. Ttime
-  /\.([0-9]*) /,                       # 4. .ms
-  /#([0-9]*)/,                         # 5. #pid
-  /:([a-z0-9]*)\] +/,                  # 6. :thread
+  /(?<SEVERITY_CHAR>[A-Z]), \[/,       # 1. severity char
+  /(?<DATE_STRING>[-0-9]*)T/,          # 2. date
+  /(?<TIME>[0-9:]*\.)/,                # 3. Ttime
+  /(?<MS>[0-9]*) #/,                   # 4. .ms
+  /(?<PID>[0-9]*):/,                   # 5. #pid
+  /(?<THREAD>[a-z0-9]*)\] +/,          # 6. :thread
   /[A-Z]{0,5} -- [^:]*: /,
   /MIQ\(#{worker_type_regexp}\) .*/,
   /Memory Info XXXX /,
-  /(\([^\)]*\) )?=> /,                 # 7. msg (queue msg, etc)
-  /(\{[^\}]*\})/                       # 8. mem info
-].map(&:source).join
-
-DATE=2
-TIME=3
-PID=5
-MSG=7
-INFO=8
+  /(?<MSG>\([^\)]*\) )?=> /,           # 7. msg (queue msg, etc)
+  /(?<MEM_INFO>\{[^\}]*\})/            # 8. mem info
+].map(&:source).unshift(/^\[----\] /.source).join
 
 data_file   = nil
 current_pid = nil
@@ -87,19 +81,16 @@ log_files.each do |log_file|
   io_klass.open(log_file) do |file|
     file.each_line do |line|
       next unless line_match = line.match(LOG_LINE_REGEXP)
-      next if options[:pid] && options[:pid] != line_match[PID]
+      next if options[:pid] && options[:pid] != line_match["PID"]
 
       # Close the file since we have a new pid and sets to nil
-      data_file = data_file.close if data_file && current_pid != line_match[PID]
+      data_file = data_file.close if data_file && current_pid != line_match["PID"]
 
-      date        = line_match[DATE]
-      time        = line_match[TIME]
-      current_pid = line_match[PID]
-      msg         = line_match[MSG]
-      info        = eval line_match[INFO]
+      current_pid = line_match["PID"]
+      info        = eval line_match["MEM_INFO"]
 
       unless data_file
-        datestamp = date.gsub(/[^0-9]/, '')
+        datestamp = line_match["DATE_STRING"].gsub(/[^0-9]/, '')
         filename  = File.join output_dir, "#{datestamp}_#{current_pid}.data"
         data_file = File.open(filename, :mode => "w")
 
@@ -112,7 +103,9 @@ log_files.each do |log_file|
                       .join("\n")
       end
 
-      data_file.puts "#{date}T#{time} #{info[:PSS]} #{info[:RSS]} #{info[:Live]} #{info[:Old]}"
+      data_file.puts "#{line_match["DATE_STRING"]}T#{line_match["TIME"]} " \
+                     "#{info[:PSS]} #{info[:RSS]} "                 \
+                     "#{info[:Live]} #{info[:Old]}"
     end
   end
 end
