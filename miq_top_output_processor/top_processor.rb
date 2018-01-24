@@ -68,36 +68,38 @@ options[:ppid_size] = options[:has_ppid] ? options[:pid_size] + 1 : 0
 # Regexp for parsing the first line of the top output.  Mostly used to
 # determine the current time the top sample was taken.
 TOP_UPTIME_LINE_REGEXP = Regexp.new [
-  /top - (\d\d:\d\d:\d\d)\s*/,          # 1. Local Time
-  /up\s*(\d* days?)?,?\s*/,             # 2. Uptime days
-  /(\d?\d:\d\d|\d+ min),\s*/,           # 3. Uptime hours/min
-  /(\d* users?),\s*/,                   # 4. Logged in users
+  /top - /,
+  /(?<LOCAL_TIME>\d\d:\d\d:\d\d)\s*/,         # 1. Local Time
+  /up\s*/,
+  /(?<UPTIME_DAYS>\d* days?)?,?\s*/,          # 2. Uptime days
+  /(?<UPTIME_HOURS>\d?\d:\d\d|\d+ min),\s*/,  # 3. Uptime hours/min
+  /(?<LOGGED_IN_USERS>\d* users?),\s*/,       # 4. Logged in users
   /load average:\s*/,
-  /([\d\.]*),\s*/,                      # 5. Load 1 min
-  /([\d\.]*),\s*/,                      # 6. Load 5 min
-  /([\d\.]*)/                           # 7. Load 6 min
+  /(?<LOAD_1>[\d\.]*),\s*/,                   # 5. Load 1 min
+  /(?<LOAD_5>[\d\.]*),\s*/,                   # 6. Load 5 min
+  /(?<LOAD_15>[\d\.]*)/                       # 7. Load 15 min
 ].map(&:source).join
 
 # Parses a single line of the process info from the top output.
 TOP_PROC_LINE_REGEXP = Regexp.new [
-  /^([ 0-9]{#{options[:pid_size]}})\s/, # 1. PID
-  /([ 0-9]{#{options[:ppid_size]}})/,   # 2. Parent PID (must be stripped)
-  /(.{10})/,                            # 3. USER
-  /(.{2})\s/,                           # 4. PR
-  /(.{3})\s/,                           # 5. NICE Increment (I think?)
-  /(.{7})\s/,                           # 6. Virtual Mem
-  /(.{6})\s/,                           # 7. RSS
-  /(.{6})\s/,                           # 8. SHR
-  /(\w)\s/,                             # 9. S
-  /(.{5})\s/,                           # 10. %CPU
-  /(.{4})\s/,                           # 11. %MEM
-  /(.{9})\s/,                           # 12. CPU TIME
-  /(.*#{worker_type_regexp})$/          # 13. CMD
-].map(&:source).join
+  /(?<PID>[ 0-9]{#{options[:pid_size]}})\s/,  # 1. PID
+  /(?<PPID>[ 0-9]{#{options[:ppid_size]}})/,  # 2. Parent PID (must be stripped)
+  /(?<USER>.{10})/,                           # 3. USER
+  /(?<PR>.{2})\s/,                            # 4. PR
+  /(?<NI>.{3})\s/,                            # 5. NICE Increment (I think?)
+  /(?<VIRT>.{7})\s/,                          # 6. Virtual Mem
+  /(?<RSS>.{6})\s/,                           # 7. RSS
+  /(?<SHR>.{6})\s/,                           # 8. SHR
+  /(?<S>\w)\s/,                               # 9. S
+  /(?<CPU%>.{5})\s/,                          # 10. %CPU
+  /(?<MEM%>.{4})\s/,                          # 11. %MEM
+  /(?<CPU_TIME>.{9})\s/,                      # 12. CPU TIME
+  /(?<CMD>.*#{worker_type_regexp})$/          # 13. CMD
+].map(&:source).unshift("^").join
 
 # Pulls out the date from the timesync line in the top_output files.  Used to
 # determine the current date.
-TIMESYNC_REGEXP = /timesync: date time is-> (.*)$/
+TIMESYNC_REGEXP = /timesync: date time is-> (?<DATE_STRING>.*)$/
 
 $: << File.expand_path(File.join("..", "..", "util"), __FILE__)
 require 'byte_formatter'
@@ -130,25 +132,24 @@ log_files.each do |log_file|
 
       case line
       when TOP_UPTIME_LINE_REGEXP
-        # puts line
-        time  = Regexp.last_match[1]
-        cpu1  = Regexp.last_match[5]
-        cpu5  = Regexp.last_match[6]
-        cpu15 = Regexp.last_match[7]
+        time  = Regexp.last_match["LOCAL_TIME"]
+        cpu1  = Regexp.last_match["LOAD_1"]
+        cpu5  = Regexp.last_match["LOAD_5"]
+        cpu15 = Regexp.last_match["LOAD_15"]
 
       when TOP_PROC_LINE_REGEXP
-        next if options[:pid] && Regexp.last_match[1].to_i != options[:pid]
+        next if options[:pid] && Regexp.last_match["PID"].to_i != options[:pid]
 
         # Close the file since we have a new pid, and chances are the file will
         # not need to be re-opened.
-        if data_file[current_pid] && current_pid != Regexp.last_match[1].to_i
+        if data_file[current_pid] && current_pid != Regexp.last_match["PID"].to_i
           data_file[current_pid].close
         end
 
-        current_pid = Regexp.last_match[1].to_i
-        virt        = ByteFormatter.to_bytes(Regexp.last_match[6])
-        res         = ByteFormatter.to_bytes(Regexp.last_match[7])
-        shr         = ByteFormatter.to_bytes(Regexp.last_match[8])
+        current_pid = Regexp.last_match["PID"].to_i
+        virt        = ByteFormatter.to_bytes(Regexp.last_match["VIRT"])
+        rss         = ByteFormatter.to_bytes(Regexp.last_match["RSS"])
+        shr         = ByteFormatter.to_bytes(Regexp.last_match["SHR"])
 
         if data_file[current_pid] && data_file[current_pid].closed?
           data_file[current_pid].reopen(data_file[current_pid].path, "a")
@@ -166,7 +167,7 @@ log_files.each do |log_file|
           :time => time,
           :pid  => current_pid,
           :virt => virt,
-          :res  => res,
+          :res  => rss,
           :shr  => shr,
         }
         next if data_file[current_pid].nil? || data_file[current_pid].closed?
@@ -184,7 +185,7 @@ log_files.each do |log_file|
         end if pid_buffer[current_pid]
 
       when TIMESYNC_REGEXP
-        date = DateStringStruct.new Regexp.last_match[1]
+        date = DateStringStruct.new Regexp.last_match["DATE_STRING"]
 
         (pid_buffer[current_pid] || []).each do |entry|
           puts entry unless entry[:time]
