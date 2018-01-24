@@ -16,7 +16,9 @@ OptionParser.new do |opt|
   opt.separator "Options"
 
   opt.on("-pPID", "--pid=PID", Integer, "Specific PID to gather data for") do |pid|
-    options[:pid] = pid.to_i
+    # just want to use the Integer to validate the number, but it is easier to
+    # compare this as a string when parsing.
+    options[:pid] = pid.to_s
   end
 
   opt.on("-wWORKER", "--worker-type=WORKER", String, "Worker type filter") do |type|
