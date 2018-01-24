@@ -28,7 +28,7 @@ OptionParser.new do |opt|
   end
 
   opt.on("-pPID", "--pid=PID", Integer, "Specific PID to gather data for") do |pid|
-    options[:pid] = pid.to_i
+    options[:pid] = pid.to_s
   end
 
   opt.on("-P", "--[no-]ppid", [TrueClass, FalseClass], "Toggle if PPID field is present") do |has_ppid|
@@ -138,15 +138,15 @@ log_files.each do |log_file|
         cpu15 = Regexp.last_match["LOAD_15"]
 
       when TOP_PROC_LINE_REGEXP
-        next if options[:pid] && Regexp.last_match["PID"].to_i != options[:pid]
+        next if options[:pid] && Regexp.last_match["PID"].strip != options[:pid]
 
         # Close the file since we have a new pid, and chances are the file will
         # not need to be re-opened.
-        if data_file[current_pid] && current_pid != Regexp.last_match["PID"].to_i
+        if data_file[current_pid] && current_pid != Regexp.last_match["PID"].strip
           data_file[current_pid].close
         end
 
-        current_pid = Regexp.last_match["PID"].to_i
+        current_pid = Regexp.last_match["PID"].strip
         virt        = ByteFormatter.to_bytes(Regexp.last_match["VIRT"])
         rss         = ByteFormatter.to_bytes(Regexp.last_match["RSS"])
         shr         = ByteFormatter.to_bytes(Regexp.last_match["SHR"])
