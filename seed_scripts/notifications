@@ -1,0 +1,154 @@
+#!/usr/bin/env ruby
+require 'optparse'
+
+options = {
+  :environment => "development",
+  :miq_root    => Dir.pwd,
+  :num         => 10_000
+}
+
+OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [options]"
+
+  opt.separator ""
+  opt.separator "Mass inserts a bunch of dummy notifications into the DB for"
+  opt.separator "purging tests.  Must be run from MIQ root dir, or pass the"
+  opt.separator "--root option."
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-e", "--environment=RAILS_ENV", String, "Rails environment to use") do |env|
+    options[:environment] = env
+  end
+
+  opt.on("-n", "--num=NUM", Integer, "Number of notifications to create type (def: 100,000)") do |num|
+    options[:num] = num.to_i
+  end
+
+  opt.on("-r", "--root=MIQ_ROOT", String, "MIQ repo root directory") do |miq_root|
+    options[:miq_root] = miq_root
+  end
+
+  opt.on("-v", "--[no-]verbose", "Enable/Disable ActiveRecord logging to STDOUT") do |val|
+    options[:verbose] = val
+  end
+end.parse!
+
+require "rubygems"
+require "bundler/setup"
+require "set"
+require "yaml"
+require "pathname"
+require "ostruct"
+
+miq_root = Pathname.new options[:miq_root]
+$: << miq_root.join("app/models").to_s
+$: << miq_root.join("lib").to_s
+
+Dir.chdir options[:miq_root] do
+
+  module ManagerRefresh; end  # HACK
+
+  require "vmdb/settings_walker"
+
+  # HACKY-HACK
+  module Vmdb
+    class Settings
+      def self.decrypt_passwords!(data)
+        Vmdb::SettingsWalker.decrypt_passwords!(data)
+      end
+    end
+  end
+
+  require "patches/database_configuration_patch"
+  require "manager_refresh/save_collection/saver/sql_helper"
+  require "active_record"
+
+  # Convenience class
+  class DBConnectionConfig
+    def self.database_configuration
+      if ENV["DATABASE_URL"]
+        {}
+      end
+    end
+
+    class << self
+      prepend DatabaseConfigurationPatch
+    end
+
+    def self.[](env)
+      database_configuration[env]
+    end
+  end
+
+  # Think I a just to be safe.  Not needed.
+  ENV["RAILS_ENV"] = options[:environment]
+
+  ActiveRecord::Base.logger ||= Logger.new(options[:verbose] ? STDOUT : nil)
+  ActiveRecord::Base.configurations = DBConnectionConfig.database_configuration
+  ActiveRecord::Base.establish_connection ActiveRecord::Base.configurations[options[:environment]]
+
+
+  class NotificationType < ActiveRecord::Base; end
+  class Notification < ActiveRecord::Base
+    extend ManagerRefresh::SaveCollection::Saver::SqlHelper
+
+    def self.inventory_collection # HACK
+      @inventory_collection ||= OpenStruct.new(:parallel_safe? => true)
+    end
+
+    def self.supports_remote_data_timestamp?(all_attribute_keys)
+      all_attribute_keys.include?(:remote_data_timestamp)
+    end
+
+    def self.unique_index_columns
+      []
+    end
+  end
+
+  # Recipients (users)
+  #
+  # GLOBAL:      User.pluck(:id)
+  # USER:        User.pluck(:id).sample(1)
+  # GROUP:       Group.all.each(&:user_ids).sample(1).user_ids
+  # TENANT:      Tenant.all.each(&:user_ids).sample(1).user_ids
+  # SUPERADMIN:  User.superadmins.pluck(:id)
+
+  now    = Time.now.utc
+  signed = [1,-1]
+  keys   = [:notification_type_id, :created_at, :updated_at]
+
+  NotificationType.all.pluck(:id, :audience, :expires_in).each do |(id, audience, expires_in)|
+    hashes     = []
+
+    options[:num].times do |i|
+      # Create a timestamp with the following possibilities:
+      #
+      # - is just `now` (calling `rand(2) * ...` will potentially return 0 for
+      #   everything within the ()'s)
+      # - is now + expires_in.seconds
+      # - is now + expires_in.seconds +/- 0..expires_in.seconds
+      #   - +/- from `signed.sample * rand(expires_in).seconds`
+      #
+      # From testing, about 25% of the notifications created here end up being
+      # already expired.
+      #
+      timestamp        = now - (rand(2) * (signed.sample * rand(expires_in).seconds + expires_in.seconds))
+      hashes << {
+        :notification_type_id => id,
+        :created_at           => timestamp,
+        :updated_at           => timestamp
+      }
+    end
+
+    # There is a trailing comma in the `query` result from this method, hend
+    # the `strip[0..-2]` before passing it to `.connection.execute`
+    query = Notification.build_insert_query(keys, hashes, :on_conflict => :do_nothing)
+    ids = Notification.connection.execute query.strip[0..-2]
+    print "."
+
+    # TODO:  Use the ids returned to build some NotificationRecipient records
+    # for each Notification.
+  end; puts # new line
+end
+
