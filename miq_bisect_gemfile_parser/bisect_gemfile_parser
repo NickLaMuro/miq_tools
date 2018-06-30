@@ -29,6 +29,8 @@
 #
 
 class GemfilePluginParser
+  GIT_URL_MATCH = /^\w+:\/\/github.com\/ManageIQ\/(manageiq-|miq).*$/.freeze
+
   class << self
     def parse
       new.tap {|i| i.instance_eval { eval File.read "Gemfile" } }
@@ -44,7 +46,7 @@ class GemfilePluginParser
 
   def gem gem_name, *args
     hash = args.pop
-    if hash and hash.is_a?(Hash) and hash[:git].to_s.include?("https://github.com/ManageIQ/manageiq-")
+    if hash and hash.is_a?(Hash) and hash[:git].to_s =~ GIT_URL_MATCH
       @manageiq_plugins << gem_name
     end
   end
