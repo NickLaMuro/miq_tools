@@ -87,8 +87,17 @@ base_bisect_rb_content = [
   ''
 ]
 
+KNOWN_REPO_CHANGES = {
+  "miq_v2v_ui"   => "miq_v2v_ui_plugin",
+  "manageiq-v2v" => "miq_v2v_ui_plugin"
+}
+
 GemfilePluginParser.parse.each do |manageiq_plugin|
-  base_bisect_rb_content << "override_gem '#{manageiq_plugin}', :git => 'https://github.com/manageiq/#{manageiq_plugin}', :ref => \"master@{\#{bisect_time}}\""
+  override_gem_content  = "override_gem '#{manageiq_plugin}', "
+  override_gem_content << ":git => 'https://github.com/ManageIQ/#{KNOWN_REPO_CHANGES[manageiq_plugin] || manageiq_plugin}', "
+  override_gem_content << ":ref => \"master@{\#{bisect_time}}\""
+
+  base_bisect_rb_content << override_gem_content
 end
 
 # puts base_bisect_rb_content.join("\n")
