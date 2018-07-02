@@ -76,7 +76,7 @@ base_bisect_rb_content = [
   '    allowed_in_path do',
   '      if ref.include?("@")',
   '        branch, timestamp = ref.split("@")',
-  '        git("log --format=\'%H\' --branches=#{branch} --before=#{timestamp.gsub(/[\{\}]/,"")} -n1").strip',
+  '        git("log --format=\'%H\' --branches=#{branch} --before=#{timestamp.gsub(/[\{\}]/,"")} --merges -n1").strip',
   '      else',
   '        git("rev-parse --verify #{Shellwords.shellescape(ref)}", true).strip',
   '      end',
