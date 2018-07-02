@@ -67,6 +67,7 @@ end
 
 base_bisect_rb_content = [
   'require "shellwords"',
+  'require "time"',
   '',
   'class Bundler::Source::Git::GitProxy',
   '  private',
@@ -83,7 +84,10 @@ base_bisect_rb_content = [
   '  end',
   'end',
   '',
-  'bisect_time = `git show -q --format="%ar"`.chomp.gsub(/ /, ".")',
+  'bisect_iso_time = `git show -q --format="%ai"`.chomp',
+  '# Time in "hours ago".',
+  '#   example:  "100.hours.ago"',
+  'bisect_time = "#{(Time.now.to_i - Time.parse(bisect_iso_time).to_i) / 60 / 60}.hours.ago"',
   ''
 ]
 
