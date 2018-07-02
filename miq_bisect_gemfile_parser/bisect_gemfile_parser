@@ -101,4 +101,4 @@ GemfilePluginParser.parse.each do |manageiq_plugin|
 end
 
 # puts base_bisect_rb_content.join("\n")
-File.write 'bundler.d/bisect.rb', base_bisect_rb_content.join("\n")
+File.write 'bundler.d/bisect.rb', base_bisect_rb_content.join("\n") << "\n"
