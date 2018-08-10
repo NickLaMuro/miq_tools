@@ -12,6 +12,7 @@ class MultiFileLogParser
 
     @id_col        = options[:id_col]
     @current_id    = nil
+    @single_file   = options[:single_file]
     @data_file     = {}
     @match_buffer  = {}
     # @id_buffer     = {}
@@ -35,6 +36,7 @@ class MultiFileLogParser
         next unless line_match = valid_line_for(line, regexp)
 
         set_match_buffer_for line_match
+        set_ouput_file_if_needed
         update_current_file_and_current_id
 
         block.call(@current_id, @data_file, @match_buffer, lineno) if block
@@ -96,6 +98,14 @@ class MultiFileLogParser
   def set_match_buffer_for line_match
     line_match.regexp.named_captures.each do |col, _|
       @match_buffer[col] = line_match[col]
+    end
+  end
+
+  def set_ouput_file_if_needed
+    if @single_file
+      @data_file[@current_id] ||= @single_file
+    else
+      update_current_file_and_current_id
     end
   end
 
