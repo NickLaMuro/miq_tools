@@ -124,7 +124,7 @@ class MultiFileLogParser
       filename  = "#{@match_buffer["_datestamp"]}_#{@current_id}.data"
       filename  = File.join @options[:output_dir], filename
 
-      puts "creating new file:  #{filename}" if true || @options[:verbose]
+      puts "creating new file:  #{filename}" if @options[:verbose]
       @data_file[@current_id] = File.open(filename, :mode => "w")
     end
   end
