@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'yaml'
+require 'pp'
+
+options = { :out => STDOUT }
+
+OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [query_file]"
+
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-oFILE", "--out=FILE", "Output file (default: STDOUT)") { |f| options[:out] = f }
+  opt.on("-h",     "--help",     "Show this message")             { puts opt; exit }
+end.parse!(ARGV)
+
+
+query_file = ARGV.shift
+raise ArgumentError, "File #{query_file} does not exist" unless File.exist? query_file
+
+# YAML.load_file(query_file)['queries'] do |query|
+# end
+
+query_types = Hash.new.compare_by_identity
+data = YAML.load_file(query_file)
+
+data[:queries].each do |query|
+  matched = nil
+  query_types.keys.each do |query_type_key|
+    next if query_type_key.empty?
+    next unless (query_type_key - query[:stacktrace]).empty?
+    # puts matched
+    matched = query_type_key
+    break
+  end
+
+  if matched
+    query_types[matched][:total]    += 1
+    query_types[matched][:total_ms] += query[:elapsed_time]
+    unless query_types[matched][:queries].include? query[:sql]
+      query_types[matched][:queries] << query[:sql]
+    end
+  else
+    query_types[query[:stacktrace]] = {
+      :total      => 1,
+      :total_ms   => query[:elapsed_time],
+      :queries    => [query[:sql]],
+      :stacktrace => query[:stacktrace]
+    }
+  end
+end
+
+begin
+  io = unless options[:out] == STDOUT
+         File.open options[:out], "w"
+       else
+         STDOUT
+       end
+
+  i = 0
+  query_types.each do |_, v|
+    i += 1
+    io.puts '%06d' % i
+    io.puts '------'
+    io.puts v.pretty_inspect
+    io.puts
+  end
+
+  io.puts data[:total_queries]
+  # puts data[:queries].count
+ensure
+  io.close unless io == STDOUT
+end
