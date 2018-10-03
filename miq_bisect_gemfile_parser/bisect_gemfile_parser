@@ -87,6 +87,19 @@ base_bisect_rb_content = [
   '  end',
   'end',
   '',
+  'def bisect_gem_override(name, *args)',
+  '  if dependencies.any? && dependency = dependencies.find { |d| d.name == name }',
+  '    removed_dependency = dependencies.delete(dependency)',
+  '    if removed_dependency.source.kind_of?(Bundler::Source::Git)',
+  '      @sources.send(:source_list_for, removed_dependency.source).delete_if do |other_source|',
+  '        @sources.send(:equal_source?, removed_dependency.source, other_source)',
+  '      end',
+  '    end',
+  '',
+  '    gem name, *args',
+  '  end',
+  'end',
+  '',
   'bisect_iso_time = `git show -q --format="%ai"`.chomp',
   '# Time in "hours ago".',
   '#   example:  "100.hours.ago"',
@@ -101,7 +114,7 @@ KNOWN_REPO_CHANGES = {
 
 GemfilePluginParser.parse.each do |plugin_info|
   plugin_name = plugin_info[:name]
-  override_gem_content  = "override_gem '#{plugin_name}', "
+  override_gem_content  = "bisect_gem_override '#{plugin_name}', "
   override_gem_content << ":git => 'https://github.com/ManageIQ/#{KNOWN_REPO_CHANGES[plugin_name] || plugin_name}', "
   override_gem_content << ":ref => \"#{plugin_info[:branch] || 'master'}@{\#{bisect_time}}\""
 
