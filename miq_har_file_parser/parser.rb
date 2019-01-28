@@ -197,7 +197,7 @@ module HarFile
 
         # Login
         login_params = {
-          :user_name     => "<%= username %>"
+          :user_name     => "<%= username %>",
           :user_password => "<%= password %>"
         }
         app.post "/dashboard/authenticate", :params => login_params
