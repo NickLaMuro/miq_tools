@@ -129,6 +129,13 @@ module HarFile
           previous_csrf_token = csrf_token
         end
 
+        # Determine if the request is an XHR request
+        xhr_request = (request["headers"].detect do |header|
+                        header["name"] == "X-Requested-With" && header["value"] == "XMLHttpRequest"
+                      end || {})["value"]
+
+        request_data[:xhr_request] = true if xhr_request
+
         # Add necessary params from postData
         if request["postData"] && request["postData"]["params"]
           request_data[:params] = {}
@@ -142,14 +149,17 @@ module HarFile
               # create html parsing regexp to find auth token
               #
               # Basically, split the parsed line of html on the auth_token is
-              # found, Regexp.escape each side, and join with a capture group
-              # that will return the authtoken specific to the request just
-              # made.  Build the regexp from that resulting string, and that
-              # will be used against the body that was returned.
-              auth_token_parser_regexp = Regexp.new auth_token_html.split(param["value"])
-                                                                   .map { |part| Regexp.escape part }
-                                                                   .join("(?<AUTHENTICITY_TOKEN>.*)")
-              request_data[:fetch_authenticity_token] = auth_token_parser_regexp
+              # found, Regexp.escape 30 characters around it on each side, and
+              # join those parts with a capture group that will return the
+              # authtoken specific to the request just made.  Build the regexp
+              # from that resulting string, and that will be used against the
+              # body that was returned.
+              token_regexp_parts  = auth_token_html.split(param["value"])
+              token_parser_regexp = Regexp.new [
+                                                 Regexp.escape(token_regexp_parts.first[-30, 30]),
+                                                 Regexp.escape(token_regexp_parts.last[0, 30])
+                                               ].join("(?<AUTHENTICITY_TOKEN>.*)")
+              request_data[:fetch_authenticity_token] = token_parser_regexp
             else
               request_data[:params][param["name"]] = param["value"]
             end
@@ -221,6 +231,10 @@ module HarFile
         # Update any request's `:headers => base_headers` to use
         # `benchmark_headers` if you wish to profile the request.
         base_headers      = {}
+        xhr_headers       = { 
+          "X-Requested-With" => "XMLHttpRequest",
+          "Accept"           => "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01"
+        }
         perf_headers      = { 
           "HTTP_WITH_PERFORMANCE_MONITORING" => 'true',
           "HTTP_MIQ_PERF_STACKPROF_RAW"      => 'true'
@@ -253,6 +267,7 @@ module HarFile
         params            = <%= "params.merge " unless request[:params].nil? %>{ "authenticity_token" => auth_token }
         <% end # if request[:fetch_authenticity_token] -%>
         <% request_headers = request[:benchmark] ? "benchmark_headers" : "base_headers" -%>
+        <% request_headers = request_headers.concat ".merge(xhr_headers)" if request[:xhr_request] -%>
         app.<%= request[:method] %> "<%= request[:path] %>"<%= "," -%>
          :headers => <%= request_headers %>, :params => params
 
