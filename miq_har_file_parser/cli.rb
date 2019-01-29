@@ -44,6 +44,10 @@ module HarFile
           options[:threshold] = threshold.to_i
         end
 
+        opt.on "-u", "--[no-]ui-constants", "Autoload UiConstants in script (default: false)" do |ui_constants|
+          options[:ui_constants] = ui_constants
+        end
+
         opt.on "-h", "--help",        "Show this message" do
           puts opt
           exit

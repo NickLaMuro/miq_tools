@@ -8,6 +8,9 @@ module HarFile
     # Output file (default: STDOUT)
     attr_accessor :output
 
+    # When generating a template, autoload UiConstants
+    attr_accessor :ui_constants
+
     # When generating a template, automatically profile slow requests
     attr_accessor :auto_profile
 
@@ -29,6 +32,7 @@ module HarFile
       @input  = opts[:input]  || STDIN
       @output = opts[:output] || STDOUT
 
+      @ui_constants           = opts[:ui_constants]
       @auto_profile           = opts[:auto_profile]
       @auto_profile_threshold = opts[:threshold] || 10000
     end
@@ -179,6 +183,7 @@ module HarFile
       template_binding.local_variable_set :username, username
       template_binding.local_variable_set :password, password
       template_binding.local_variable_set :requests, @runner_requests
+      template_binding.local_variable_set :ui_constants, ui_constants
       
       write_to_output ERB.new(template, nil, "-").result(template_binding)
     end
@@ -196,6 +201,11 @@ module HarFile
         # Setup code
         Rails.application.load_console
         Rails.env = ENV["RAILS_ENV"]
+        <% if ui_constants -%>
+
+        # Autoload UiContants so there are no errors (for older releases)
+        UiConstants
+        <% end -%>
 
         # Include helper methods and call
         include Rails::ConsoleMethods
@@ -239,7 +249,7 @@ module HarFile
         <% if request[:fetch_authenticity_token] -%>
 
         # XHR request with authenticity_token, find in HTML body and add to params
-        auth_token        = app.response.body.match(request[:fetch_authenticity_token])[:AUTHENTICITY_TOKEN]
+        auth_token        = app.response.body.match(<%= request[:fetch_authenticity_token].inspect %>)[:AUTHENTICITY_TOKEN]
         params            = <%= "params.merge " unless request[:params].nil? %>{ "authenticity_token" => auth_token }
         <% end # if request[:fetch_authenticity_token] -%>
         <% request_headers = request[:benchmark] ? "benchmark_headers" : "base_headers" -%>
