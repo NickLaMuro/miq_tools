@@ -19,7 +19,8 @@ module HarFile
 
     LOGIN_REQUEST    = %r{/dashboard/authenticate}
     INVALID_REQUESTS = %r{
-      /assets|             # assets
+      /assets|packs|       # assets
+      /custom\.css|        # styles
       /static|             # static pages
       /dashboard/widget|   # dashboard widgets
       /ws/notifications|   # notifications websocket(?) calls
