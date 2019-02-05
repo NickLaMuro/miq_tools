@@ -261,7 +261,7 @@ module HarFile
 
         # XHR request with authenticity_token, find in HTML body and add to params
         auth_token        = app.response.body.match(<%= request[:fetch_authenticity_token].inspect %>)[:AUTHENTICITY_TOKEN]
-        params            = <%= "params.merge " unless request[:params].nil? %>{ "authenticity_token" => auth_token }
+        params            = params.merge "authenticity_token" => auth_token
         <% end # if request[:fetch_authenticity_token] -%>
         <% request_headers = request[:benchmark] ? "benchmark_headers" : "base_headers" -%>
         app.<%= request[:method] %> "<%= request[:path] %>"<%= "," -%>
