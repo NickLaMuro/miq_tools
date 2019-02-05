@@ -232,10 +232,6 @@ module HarFile
         # Update any request's `:headers => base_headers` to use
         # `benchmark_headers` if you wish to profile the request.
         base_headers      = {}
-        xhr_headers       = { 
-          "X-Requested-With" => "XMLHttpRequest",
-          "Accept"           => "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01"
-        }
         perf_headers      = { 
           "HTTP_WITH_PERFORMANCE_MONITORING" => 'true',
           "HTTP_MIQ_PERF_STACKPROF_RAW"      => 'true'
@@ -268,9 +264,8 @@ module HarFile
         params            = <%= "params.merge " unless request[:params].nil? %>{ "authenticity_token" => auth_token }
         <% end # if request[:fetch_authenticity_token] -%>
         <% request_headers = request[:benchmark] ? "benchmark_headers" : "base_headers" -%>
-        <% request_headers = request_headers.concat ".merge(xhr_headers)" if request[:xhr_request] -%>
         app.<%= request[:method] %> "<%= request[:path] %>"<%= "," -%>
-         :headers => <%= request_headers %>, :params => params
+         :headers => <%= request_headers %>, :params => params<%= ', :xhr => true' if request[:xhr_request] -%>
 
         <% end # requests.each -%>
       TEMPLATE_ERB
