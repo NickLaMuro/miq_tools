@@ -1,0 +1,163 @@
+#!/usr/bin/env ruby
+#
+# Parses your Gemfile.lock to determine the current versions of the UI based
+# gems, and then deletes the rest.
+#
+#
+# A large portion of the disk usage code is pulled from Homebrew.
+#
+# License for Homebrew below:
+#
+# BSD 2-Clause License
+#
+# Copyright (c) 2009-present, Homebrew contributors
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+require 'optparse'
+
+options = {
+  :dry_run => false,
+  :full    => false,
+  :silent  => false
+}
+
+OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [options]"
+
+  opt.separator ""
+  opt.separator "Parses your Gemfile.lock to determine the current versions of"
+  opt.separator "the UI based gems, and then deletes the rest."
+  opt.separator ""
+  opt.separator "By default, this will only delete the generated assets, but"
+  opt.separator "running with `-f` will delete the entire gem dir."
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-D", "--dry-run", "Skip delete operations") do
+    options[:dry_run] = true
+  end
+
+  opt.on("-f", "--full",    "Delete whole gem dir") do
+    options[:full]    = true
+  end
+
+  opt.on("-s", "--silent",  "Disable Disk Usage checking/printing") do
+    options[:silent]  = true
+  end
+
+  opt.on("-h", "--help",   "Show this message") { puts opt; exit }
+end.parse!
+
+
+require 'bundler/setup'
+require 'fileutils'
+
+# The 7 or so lines here is a bit dense, so I will explain:
+#
+#   1. We collect all of the git gems from bundler
+#     - Make sure they are prefixed with 'manageiq-*'
+#     - Make sure they include a `app/javascript` dir
+#   2. Convert the directory paths to an array of gem names sans git-SHA
+#     - get the base name of dir
+#     - Split on '-', select all but last element, re-join string
+#   3. Build a regexp from those gem names
+#   4. Scan the Bundler gem dir for similar gems, trim down via above Regexp
+#   5. Removes the existing gems in the bundle from the list (stale_git_gems)
+
+spec_git_paths = Bundler.definition.spec_git_paths
+                        .select {|dir| File.basename(dir) =~ /^manageiq-/ }
+                        .select {|dir| Dir.exist? File.join(dir, "app", "javascript") }
+base_gem_names = spec_git_paths.map {|dir| File.basename(dir).split("-")[0..-2].join("-") }
+gem_regexp     = Regexp.new "(#{base_gem_names.join('|')})"
+git_gems       = Dir["#{Gem.dir}/bundler/gems/*"].grep(gem_regexp)
+stale_ui_gems  = (git_gems - spec_git_paths)
+total_savings  = 0
+
+
+warn "DRY RUN:  NO OPERATIONS BEING EXECUTED!!" if options[:dry_run]
+
+stale_ui_gems.each do |stale_miq_ui_gem_dir|
+	delete_paths = if options[:full]
+                   [stale_miq_ui_gem_dir]
+                 else
+                   [
+                     File.join(stale_miq_ui_gem_dir, "node_modules"),
+                     File.join(stale_miq_ui_gem_dir, "vendor", "assets", "bower")
+                   ]
+                 end
+    
+  delete_paths.each do |file_path_to_delete|
+		path = Pathname.new(file_path_to_delete)
+		next unless path.exist?
+
+    unless options[:silent]
+      # The code for setting `disk_usage` is basically all from Homebrew
+      disk_usage = begin
+                     disk_size_path = if path.symlink?
+                                        path.dirname.join(path.readlink)
+                                      else
+                                        path
+                                      end
+
+                     if disk_size_path.directory?
+                       scanned_files = Set.new
+                       disk_usage = 0
+                       path.find do |f|
+                         if f.directory?
+                           disk_usage += f.lstat.size
+                         else
+                           # use Pathname#lstat instead of Pathname#stat to get info of symlink itself.
+                           stat    = f.lstat
+                           file_id = [stat.dev, stat.ino]
+                           # count hardlinks only once.
+                           unless scanned_files.include?(file_id)
+                             disk_usage += stat.size
+                             scanned_files.add(file_id)
+                           end
+                         end
+                       end
+                     else
+                       disk_usage = path.lstat.size
+                     end
+
+                     total_savings += disk_usage
+                     disk_usage.to_f / 1_048_576
+                   end
+    end
+
+		puts "Removing #{path}... #{'(%.1fMB)' % disk_usage unless options[:silent]}"
+		FileUtils.rm_rf path, :secure => true, :noop => options[:dry_run]
+	end
+end
+
+
+unless options[:silent]
+  total = if total_savings >= 1_073_741_824
+            "#{'%.1f' % (total_savings.to_f / 1_073_741_824)}GB"
+          else
+            "#{'%.1f' % (total_savings.to_f / 1_048_576)}MB"
+          end
+
+  puts "\nTotal Savings: #{total}"
+end
