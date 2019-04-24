@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+
+opts ={
+  :dirs  => ['spec'],
+  :class => nil
+}
+
+parser = OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [options] factory"
+
+  opt.separator ""
+  opt.separator "Scans the list of directories (default: 'spec/') for usages"
+  opt.separator "of `FactoryBot.create` or `FactoryBot.build` of the given"
+  opt.separator "factory, and replaces the contents of the file with a direct"
+  opt.separator "ActiveRecord call."
+  opt.separator ""
+  opt.separator "An optional --class can be passed, which will inform the"
+  opt.separator "script of the the replacements class should be, otherwise"
+  opt.separator "that is derived from the factory name"
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-c", "--class=CLASS", String, "class to replace factory with") do |klass|
+    opts[:class] = klass
+  end
+
+  opt.on("-d", "--dirs=DIRS", Array, "directories to search (default: spec)") do |dirs|
+    opts[:dirs] = dirs
+  end
+end.parse!
+
+factory = ARGV.shift
+unless factory
+  puts parser.help + "\n\n"
+  raise "Missing factory to replace!"
+end
+
+regexp = Regexp.new "FactoryBot.(create|build)\\(:#{factory}(, ?|\\))"
+dirs   = opts[:dirs].join(' ')
+cmd    = %Q`grep -lER "#{regexp.source}" #{dirs}`
+files  = `#{cmd}`
+
+if files
+  klass   = opts[:class]
+  klass ||= factory.tr(':', '')
+                   .split('_')
+                   .map(&:capitalize)
+                   .join
+
+  files.lines.map!(&:chomp).each do |file|
+    puts "replacing contents for '#{file}'..."
+
+    contents = File.read file
+
+    contents.gsub!(regexp) do |match|
+      result  = "#{klass}.#{$1 == 'build' ? 'new' : $1}"
+      result += "(" if $2 != ")"
+      result
+    end
+    File.write file, contents
+  end
+else
+  puts "no factories found with #{factory} factories"
+end
