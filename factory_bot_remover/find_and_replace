@@ -8,45 +8,52 @@ class FindAndReplace
     :class => nil
   }
 
-  def self.run args
+  def self.run *args
     new(args).run
   end
 
   def initialize args
     @args    = args
     @opts    = DEFAULT_OPTS.dup
-    @files   = []
     parse_opts!
 
     @factory = @args.shift
     @regexp  = Regexp.new "FactoryBot.(create|build)\\(:#{@factory}(, ?|\\))"
+    @dirs    = @opts[:dirs]
+    @klass   = @opts[:class]
+    @klass ||= @factory.tr(':', '')
+                      .split('_')
+                      .map!(&:capitalize)
+                      .join
 
     validate_opts!
-    find_files!
   end
 
   def run
-    if @files
-      klass   = @opts[:class]
-      klass ||= @factory.tr(':', '')
-                        .split('_')
-                        .map!(&:capitalize)
-                        .join
+    with_files do |file, name|
+      line  = nil
+      match = false
 
-      @files.each do |file|
-        puts "replacing contents for '#{file}'..."
+      while line = file.gets
+        break if match = line =~ @regexp
+      end
 
-        contents = File.read file
+      if match
+        puts "replacing contents for '#{name}'..."
+        position = file.pos
 
+        contents = line + file.read
         contents.gsub!(@regexp) do |match|
-          result  = "#{klass}.#{$1 == 'build' ? 'new' : $1}"
+          result  = "#{@klass}.#{$1 == 'build' ? 'new' : $1}"
           result += "(" if $2 != ")"
           result
         end
-        File.write file, contents
+
+        file.rewind
+        file.truncate(position)
+        file.seek(position)
+        file.write contents
       end
-    else
-      puts "no factories found with #{factory} factories"
     end
   end
 
@@ -61,13 +68,6 @@ class FindAndReplace
       puts parser.help + "\n\n"
       raise ArgumentError, "Missing factory to replace!"
     end
-  end
-
-  def find_files!
-    dirs   = @opts[:dirs].join(' ')
-    cmd    = %Q`grep -lER "#{@regexp.source}" #{dirs}`
-
-    @files = `#{cmd}`.lines.map!(&:chomp).compact
   end
 
   def parser
@@ -95,6 +95,31 @@ class FindAndReplace
       end
     end
   end
+
+  # Finds files in specified directories
+  #
+  # Assumes `@dirs` is a `spec/` dir
+  #
+  # Skips over:
+  #
+  #   - directories (duh)
+  #   - files in subdirectories of manageiq
+  #
+  # For the second, that is assumed that it is a link to or a clone of
+  # `manageiq`, and replacing those files isn't relevant.
+  #
+  def with_files
+    @dirs.each do |dir|
+      Dir["#{dir}/**/*.rb"].each do |filename|
+        next if filename.start_with? "#{dir}/manageiq/"
+        next if File.directory? filename
+
+        File.open filename, "r+" do |file|
+          yield file, filename
+        end
+      end
+    end
+  end
 end
 
-FindAndReplace.run(ARGV) if __FILE__ == $PROGRAM_NAME
+FindAndReplace.run(*ARGV) if __FILE__ == $PROGRAM_NAME
