@@ -8,9 +8,13 @@ class FindAndReplace
     :class => nil
   }
 
+  BASE_REGEXP  = /FactoryBot.(create|build)(_list)?\([[:space:]]?/
+
   def self.run *args
     new(args).run
   end
+
+  attr_accessor :factory, :klass
 
   def initialize args
     @args    = args
@@ -18,7 +22,7 @@ class FindAndReplace
     parse_opts!
 
     @factory = @args.shift
-    @regexp  = Regexp.new "FactoryBot.(create|build)\\(:#{@factory}(, ?|\\))"
+    @regexp  = Regexp.new "#{BASE_REGEXP.source}:#{@factory}(, ?|\\))"
     @dirs    = @opts[:dirs]
     @klass   = @opts[:class]
     @klass ||= @factory.tr(':', '')
@@ -37,17 +41,21 @@ class FindAndReplace
 
       while line = file.gets
         break if match = line =~ @regexp
+
+        # Check if factory definition starts on next line
+        line += file.gets.to_s
+        break if match = line =~ @regexp
       end
 
       if match
         puts "replacing contents for '#{name}'..."
         files_updated += 1
-        position = file.pos
+        position       = file.pos - line.size
 
         contents = line + file.read
         contents.gsub!(@regexp) do |match|
           result  = "#{@klass}.#{$1 == 'build' ? 'new' : $1}"
-          result += "(" if $2 != ")"
+          result += "(" if $3 != ")"
           result
         end
 
