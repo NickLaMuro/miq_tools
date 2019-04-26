@@ -1,0 +1,153 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+
+class ReplaceAll
+  DEFAULT_OPTS = {
+    :dir       => "manageiq",
+    :commit    => 'c79a3b40',
+    :factories => nil,
+    :git_cmds  => [],
+    :repos     => nil
+  }
+
+  def self.run *args
+    new(args).run
+  end
+
+  def initialize args
+    @args      = args
+    @opts      = DEFAULT_OPTS.dup
+
+    parse_opts!
+
+    @commit    = @opts[:commit]
+    @dir       = @opts[:dir]
+    @git_cmds  = @opts[:git_cmds]
+    @factories = @opts[:factories] || find_relevant_factories
+    @repos     = @opts[:repos]     || find_manageiq_repos
+  end
+
+  def run
+    # puts @git_cmds
+    if @git_cmds.empty?
+      replace_all!
+    else
+      run_git_cmds_on_all_repos!
+    end
+  end
+
+  def replace_all!
+    load File.expand_path "find_and_replace", __dir__
+    
+    # puts @factories.count
+    # puts @repos
+
+    checkout_branches
+
+    @factories.each do |factory|
+      puts "===> processing #{factory}..."
+
+      @repos.each do |repo|
+        replacer     = FindAndReplace.new ["--dirs", "#{repo}/spec", factory]
+        replacements = replacer.run 
+
+        if replacements > 0
+          commit_changes repo, replacer
+        end
+      end
+    end
+  end
+
+  def run_git_cmds_on_all_repos!
+    gcmds = @git_cmds.map do |git_cmd|
+      git_cmd.gsub(/^git\s*/, '')
+    end
+
+    @repos.each do |repo|
+      `#{gcmds.map { |gcmd| "git -C #{repo} #{gcmd}" }.join "; "}`
+    end
+  end
+
+  private
+
+  CLEANUP_REGEXP = /^(-  factory :|-FactoryGirl.define { factory :)/
+  def find_relevant_factories
+    `git -C #{@dir} show #{@commit}`.lines
+      .grep(/factory :.*$/)
+      .map!    { |str| str.sub!(CLEANUP_REGEXP, '').to_s[/^\w*/] }
+      .reject! { |str| str.nil? || str == "" || str == "firewall_rule" }
+  end
+
+  MIQ_GLOBS = %w[
+    manageiq
+    manageiq-api
+    manageiq-{v2v-,}ui-*
+    manageiq-graphql
+    manageiq-providers-*
+  ]
+  def find_manageiq_repos
+    Dir[*MIQ_GLOBS].select do |dir|
+      %w[.git spec].all? {|subdir| File.directory? "#{dir}/#{subdir}" }
+    end
+  end
+
+  BRANCH = "remove_factory_calls_without_factories"
+  def checkout_branches
+    @repos.each do |repo|
+      `git -C #{repo} checkout -b #{BRANCH} || git -C #{repo} checkout -b #{BRANCH}`
+    end
+  end
+
+  def commit_changes repo, replacer
+    puts "committing changes..."
+
+    commit_msg = <<-MSG.gsub(/ {6}/, '').lines.map(&:chomp).compact
+      Update usages of factory :#{replacer.factory}
+
+      Favor .new or .create with #{replacer.klass} instead
+    MSG
+
+    # puts "git -C #{repo} commit -avm #{commit_msg.map(&:inspect).join(' -m ')}"
+    `git -C #{repo} commit -avm #{commit_msg.map(&:inspect).join(' -m ')}`
+  end
+
+  def parse_opts!
+    parser.parse! @args
+  end
+
+  def parser
+    OptionParser.new do |opt|
+      opt.banner = "Usage: #{File.basename $0} [options]"
+
+      opt.separator ""
+      opt.separator "Checks c79a3b40 in `manageiq` for the factory types being"
+      opt.separator "removed, then for each type, does a find an replace in all"
+      opt.separator "of the repos defined"
+      opt.separator ""
+      opt.separator "Options"
+
+      opt.on("-c", "--commit=SHA", String, "Commit SHA which factories were removed") do |sha|
+        @opts[:commit] = sha
+      end
+
+      opt.on("-d", "--dir=DIR", String, "relative directory to manageiq repo") do |dir|
+        @opts[:dir] = dir
+      end
+
+      opt.on("-f", "--factories=NAMES", Array, "Optional factory names to replace (default: all)") do |factories|
+        @opts[:factories] = factories
+      end
+
+      opt.on("--git-cmd=GIT_CMD", String, "git command(s) to run on all repos") do |git_cmd|
+        @opts[:git_cmds] << git_cmd
+      end
+
+      opt.on("-r", "--repos=REPOS", Array, "Project directories to search") do |repos|
+        @opts[:repos] = repos
+      end
+    end
+  end
+end
+
+ReplaceAll.run(*ARGV) if __FILE__ == $PROGRAM_NAME

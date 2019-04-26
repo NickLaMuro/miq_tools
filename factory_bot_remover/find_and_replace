@@ -30,6 +30,7 @@ class FindAndReplace
   end
 
   def run
+    files_updated = 0
     with_files do |file, name|
       line  = nil
       match = false
@@ -40,6 +41,7 @@ class FindAndReplace
 
       if match
         puts "replacing contents for '#{name}'..."
+        files_updated += 1
         position = file.pos
 
         contents = line + file.read
@@ -55,6 +57,8 @@ class FindAndReplace
         file.write contents
       end
     end
+
+    files_updated
   end
 
   private
