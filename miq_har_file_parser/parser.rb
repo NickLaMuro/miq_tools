@@ -238,6 +238,9 @@ module HarFile
 
         CSRF_TOKEN_REGEXP = /.*csrf-token.*content="(?<CSRF_TOKEN>[^"]*)"/
 
+        # Required for running on an appliance
+        app.https! if MiqEnvironment::Command.is_appliance?
+
         # Intialize base headers
         #
         # Update any request's `:headers => base_headers` to use
