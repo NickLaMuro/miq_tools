@@ -138,10 +138,21 @@ module HarFile
         request_data[:xhr_request] = true if xhr_request
 
         # Add necessary params from postData
-        if request["postData"] && request["postData"]["params"]
+        if request["postData"] && (request["postData"]["params"] || request["postData"]["text"])
           request_data[:params] = {}
 
-          request["postData"]["params"].each do |param|
+          param_data = request["postData"]["params"]
+
+          if !param_data || param_data.empty?
+            begin
+              param_data = JSON.parse(request["postData"]["text"])
+                               .map { |k,v| { "name" => k, "value" => v } }
+            rescue => e
+              param_data = []
+            end
+          end
+
+          param_data.each do |param|
             if param["name"] == "authenticity_token"
               # find line in html with auth_token
               auth_token_finder_regexp = %r{^.*#{Regexp.escape param["value"]}.*$}
