@@ -63,9 +63,9 @@ module HarFile
       @options = {}
       option_parser.parse! args
 
-      @action          = ARGV.shift.to_s.to_sym
-      @options[:input] = ARGV.shift 
-      @parser          = HarFile::Parser.new(@options)
+      @action            = ARGV.shift.to_s.to_sym
+      @options[:input] ||= ARGV.shift
+      @parser            = HarFile::Parser.new(@options)
     end
 
     def run
