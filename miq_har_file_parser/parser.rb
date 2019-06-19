@@ -50,7 +50,7 @@ module HarFile
     #
     def summary
       fetch_valid_app_requests.each do |request|
-        output.puts "#{request["time"]}\t#{request["method"]}\t#{request["url"]}"
+        output.puts "#{request["time"]}\t#{request["start"]}\t#{request["method"]}\t#{request["url"]}"
       end
     end
 
@@ -90,9 +90,11 @@ module HarFile
       current_body = ""
       JSON.parse(File.read(@input))["log"]["entries"]
           .reject! { |entry| entry["request"]["url"] =~ INVALID_REQUESTS } 
+          .sort!   { |a, b| a["startedDateTime"] <=> b["startedDateTime"] }
           .map! do |entry|
             entry["request"]["time"]          = entry["time"]
             entry["request"]["timings"]       = entry["timings"]
+            entry["request"]["start"]         = entry["startedDateTime"]
             entry["request"]["response_body"] = current_body
 
             current_body = entry["response"]["content"]["text"]
