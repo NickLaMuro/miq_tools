@@ -50,7 +50,7 @@ module HarFile
     #
     def summary
       fetch_valid_app_requests.each do |request|
-        output.puts "#{request["time"]}\t#{request["start"]}\t#{request["method"]}\t#{request["url"]}"
+        output.puts "#{request["time"].to_i}\t#{request["start"]}\t#{request["method"]}\t#{request["url"]}"
       end
     end
 
