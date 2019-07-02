@@ -1,0 +1,206 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+
+module MIQVagrantMaster
+  class CLI
+    # Regexp for parsing the relevant releases from releases.manageiq.org
+    #
+    # Defines the following captures:
+    #
+    #   - FILENAME
+    #   - DATESTAMP
+    #   - SHA
+    #
+    RELEASE_REGEXP = /
+      href="(?<FILENAME>manageiq-vagrant-master-  # 1. full filename
+      (?<DATESTAMP>\d{8})-                        # 2. date of the build
+      (?<SHA>[\w\d]*)                             # 3. SHA of the build
+      .box)"
+    /x
+
+    # URL for fetching releases
+    RELEASE_URL = "http://releases.manageiq.org/"
+
+    # Shared description for generated metadata.json
+    DESCRIPTION = "ManageIQ Open-Source Management Platform http://manageiq.org"
+
+    # Date of the nightly to help determine version (optional)
+    attr_reader :date
+
+    # SHA of the nightly to help determine version (optional)
+    attr_reader :sha
+
+    # Version (datestamp) of the nightly (optional), defaults to the latest
+    attr_reader :version
+
+    def self.option_parser options
+      OptionParser.new do |opt|
+        opt.banner = "Usage: #{File.basename $0} [options]"
+
+        opt.separator ""
+        opt.separator "Download and installs a vagrant box from the nightly"
+        opt.separator "builds from http://releases.manageiq.org/ and allows"
+        opt.separator "them to be versioned and remain consistent in a"
+        opt.separator "Vagrantfile as 'manageiq/master' instead of having to"
+        opt.separator "create named boxes with versions in them, such as"
+        opt.separator "'manageiq/master-20190613'"
+        opt.separator ""
+        opt.separator ""
+        opt.separator "Options"
+
+        opt.on "-d", "--date=date",       "Specifc date to target (sets version)" do |date|
+          options[:date] = date
+        end
+
+        opt.on "-s", "--sha=SHA",         "Specifc SHA to target (sets version)" do |sha|
+          options[:sha] = sha
+        end
+
+        opt.on "-v", "--version=VERSION", "Version (date) to download (default: latest)" do |version|
+          options[:version] = version 
+        end
+
+        opt.separator ""
+        opt.separator "Note:  `--version` can either be a date or a sha, and"
+        opt.separator "it will search for either and match whichever it finds"
+        opt.separator "first."
+        opt.separator ""
+
+        opt.on       "--dry-run",         "Don't run the `vagrant box add` cmd" do
+          options[:dry_run] = true
+        end
+
+        opt.on "-h", "--help",            "Show this message" do
+          puts opt
+          exit
+        end
+      end
+    end
+
+    def self.run args = ARGV
+      new(args).run
+    end
+
+    def initialize args = ARGV
+      @options = {}
+
+      option_parser.parse! args
+
+      @date    = @options[:date]
+      @sha     = @options[:sha]
+      @version = @options[:version]
+    end
+
+    # - Builds the metadata_file
+    # - Determines desired --box-version, or none (latest) if not provided
+    # - Adds the versioned box to vagrant
+    def run
+      metadata_file   = build_metadata
+      install_version = case
+                        when @date
+                          releases.detect(&date_proc)[1]
+                        when @sha
+                          releases.detect(&sha_proc)[1]
+                        when @version
+                          releases.detect(&version_proc)[1]
+                        end
+
+      vagrant_cmd  = %w[vagrant box add]
+      vagrant_cmd += ["--box-version", install_version] if install_version
+      vagrant_cmd << metadata_file.path
+
+      if @options[:dry_run]
+        puts vagrant_cmd.inspect
+      else
+        system *vagrant_cmd
+      end
+    ensure
+      metadata_file.unlink if metadata_file
+    end
+
+    private
+
+    def option_parser
+      self.class.option_parser @options
+    end
+
+    # Builds a Tempfile with a local metadata.json that `vagrant` will
+    # understand when running with `vagrant box add metadata.json`.
+    #
+    # Basically gives a readable catalog of what versions are available, where
+    # "version" is the date of the nightly.  Since it "accends" naturally, so
+    # using that as the version since it doesn't have to follow semver.
+    #
+    def build_metadata
+      require 'json'
+      require 'tempfile'
+
+      metadata = {
+        "description"       => DESCRIPTION,
+        "short_description" => DESCRIPTION,
+        "name"              => "manageiq/master",
+        "versions"          => map_releases
+      }
+
+      metadata_file = Tempfile.new
+      metadata_file.write metadata.to_json
+      metadata_file.close
+
+      metadata_file
+    end
+
+    def releases
+      @releases ||= fetch_releases
+    end
+
+    # Downloads the HTML from http://releases.manageiq.org/ and parses out the
+    # relevant build links, with DATE and SHA separated:
+    #
+    # Example return value:
+    #
+    #   [
+    #     ["manageiq-vagrant-master-20200101-abcd1234.box", "20200101", "abcd1234"],
+    #     ["manageiq-vagrant-master-20200201-bcde2345.box", "20200201", "bcde2345"],
+    #     ["manageiq-vagrant-master-20200301-cdef3456.box", "20200301", "cdef3456"],
+    #     # ...
+    #   ]
+    #
+    def fetch_releases
+      require "open-uri"
+
+      open(RELEASE_URL) { |f| f.read.scan RELEASE_REGEXP }
+    end
+
+    # Maps the releases into a format that vagrant expects for the "versions"
+    # metadata.json file key.
+    def map_releases
+      releases.sort! {|x,y| x[1] <=> y[1] }
+              .map { |release|
+                {
+                  "version"              => release[1],
+                  "status"               => "active",
+                  "description_html"     => "<p>#{release[0]}</p>",
+                  "description_markdown" => release[0],
+                  "providers"            => [
+                    {"name" => "virtualbox", "url" => "#{RELEASE_URL}#{release[0]}"}
+                  ]
+                }
+              }
+    end
+
+    def date_proc
+      proc { |release| release[1] == date }
+    end
+
+    def sha_proc
+      proc { |release| release[2] == sha }
+    end
+
+    def version_proc
+      proc { |release| release[1] == version || release[2] == version }
+    end
+  end
+end
+
+MIQVagrantMaster::CLI.run if __FILE__ == $PROGRAM_NAME
