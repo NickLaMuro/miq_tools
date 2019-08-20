@@ -25,7 +25,7 @@ module HarFile
       /dashboard/widget|   # dashboard widgets
       /ws/notifications|   # notifications websocket(?) calls
       /api/notifications|  # notifications fetches
-      /api/auth|           # uneeded auth calls
+      /api/auth\?|         # uneeded auth calls
       /api$                # api pings
     }x
 
