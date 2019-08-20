@@ -89,7 +89,7 @@ module HarFile
     def fetch_valid_app_requests
       current_body = ""
       JSON.parse(File.read(@input))["log"]["entries"]
-          .reject! { |entry| entry["request"]["url"] =~ INVALID_REQUESTS } 
+          .reject! { |entry| entry["request"]["url"] =~ INVALID_REQUESTS }
           .sort!   { |a, b| a["startedDateTime"] <=> b["startedDateTime"] }
           .map! do |entry|
             entry["request"]["time"]          = entry["time"]
@@ -195,7 +195,7 @@ module HarFile
 
     def generate_script_from_template
       username, password = nil
-      
+
       @login_request["postData"]["params"].each do |param|
         case param["name"]
         when "user_name"     then username = param["value"]
@@ -208,7 +208,7 @@ module HarFile
       template_binding.local_variable_set :password, password
       template_binding.local_variable_set :requests, @runner_requests
       template_binding.local_variable_set :ui_constants, ui_constants
-      
+
       write_to_output ERB.new(template, nil, "-").result(template_binding)
     end
 
@@ -248,7 +248,7 @@ module HarFile
         # Update any request's `:headers => base_headers` to use
         # `benchmark_headers` if you wish to profile the request.
         base_headers      = {}
-        perf_headers      = { 
+        perf_headers      = {
           "HTTP_WITH_PERFORMANCE_MONITORING" => 'true',
           "HTTP_MIQ_PERF_STACKPROF_RAW"      => 'true'
         }
