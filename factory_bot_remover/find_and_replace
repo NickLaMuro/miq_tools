@@ -1,0 +1,137 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+
+class FindAndReplace
+  DEFAULT_OPTS = {
+    :dirs  => ['spec'],
+    :class => nil
+  }
+
+  BASE_REGEXP  = /FactoryBot.(create|build)(_list)?\([[:space:]]?/
+
+  def self.run *args
+    new(args).run
+  end
+
+  attr_accessor :factory, :klass
+
+  def initialize args
+    @args    = args
+    @opts    = DEFAULT_OPTS.dup
+    parse_opts!
+
+    @factory = @args.shift
+    @regexp  = Regexp.new "#{BASE_REGEXP.source}:#{@factory}(, ?|\\))"
+    @dirs    = @opts[:dirs]
+    @klass   = @opts[:class]
+    @klass ||= @factory.tr(':', '')
+                      .split('_')
+                      .map!(&:capitalize)
+                      .join
+
+    validate_opts!
+  end
+
+  def run
+    files_updated = 0
+    with_files do |file, name|
+      line  = nil
+      match = false
+
+      while line = file.gets
+        break if match = line =~ @regexp
+
+        # Check if factory definition starts on next line
+        line += file.gets.to_s
+        break if match = line =~ @regexp
+      end
+
+      if match
+        puts "replacing contents for '#{name}'..."
+        files_updated += 1
+        position       = file.pos - line.size
+
+        contents = line + file.read
+        contents.gsub!(@regexp) do |match|
+          result  = "#{@klass}.#{$1 == 'build' ? 'new' : $1}"
+          result += "(" if $3 != ")"
+          result
+        end
+
+        file.rewind
+        file.truncate(position)
+        file.seek(position)
+        file.write contents
+      end
+    end
+
+    files_updated
+  end
+
+  private
+
+  def parse_opts!
+    parser.parse! @args
+  end
+
+  def validate_opts!
+    unless @factory
+      puts parser.help + "\n\n"
+      raise ArgumentError, "Missing factory to replace!"
+    end
+  end
+
+  def parser
+    OptionParser.new do |opt|
+      opt.banner = "Usage: #{File.basename $0} [options] factory"
+
+      opt.separator ""
+      opt.separator "Scans the list of directories (default: 'spec/') for usages"
+      opt.separator "of `FactoryBot.create` or `FactoryBot.build` of the given"
+      opt.separator "factory, and replaces the contents of the file with a direct"
+      opt.separator "ActiveRecord call."
+      opt.separator ""
+      opt.separator "An optional --class can be passed, which will inform the"
+      opt.separator "script of the the replacements class should be, otherwise"
+      opt.separator "that is derived from the factory name"
+      opt.separator ""
+      opt.separator "Options"
+
+      opt.on("-c", "--class=CLASS", String, "class to replace factory with") do |klass|
+        @opts[:class] = klass
+      end
+
+      opt.on("-d", "--dirs=DIRS", Array, "directories to search (default: spec)") do |dirs|
+        @opts[:dirs] = dirs
+      end
+    end
+  end
+
+  # Finds files in specified directories
+  #
+  # Assumes `@dirs` is a `spec/` dir
+  #
+  # Skips over:
+  #
+  #   - directories (duh)
+  #   - files in subdirectories of manageiq
+  #
+  # For the second, that is assumed that it is a link to or a clone of
+  # `manageiq`, and replacing those files isn't relevant.
+  #
+  def with_files
+    @dirs.each do |dir|
+      Dir["#{dir}/**/*.rb"].each do |filename|
+        next if filename.start_with? "#{dir}/manageiq/"
+        next if File.directory? filename
+
+        File.open filename, "r+" do |file|
+          yield file, filename
+        end
+      end
+    end
+  end
+end
+
+FindAndReplace.run(*ARGV) if __FILE__ == $PROGRAM_NAME
