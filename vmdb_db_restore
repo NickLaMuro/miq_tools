@@ -25,27 +25,27 @@ OptionParser.new do |opt|
   opt.separator ""
   opt.separator "Options"
 
-  opt.on "-D", "--[no-]drop",             FalseClass, "Drop Database? (default: no)" do |yes_no|
+  opt.on "-D", "--[no-]drop",                      "Drop Database? (default: no)" do |yes_no|
     @options[:drop] = yes_no
   end
 
-  opt.on "-e", "--environment=RAILS_ENV", String,     "ENV['RAILS_ENV'] (default: development)" do |env|
+  opt.on "-e", "--environment=RAILS_ENV", String,  "ENV['RAILS_ENV'] (default: development)" do |env|
     @options[:environment] = env
   end
 
-  opt.on "-m", "--[no-]migrate",          FalseClass, "Migrate? (default: no)" do |yes_no|
+  opt.on "-m", "--[no-]migrate",                   "Migrate? (default: no)" do |yes_no|
     @options[:migrate] = yes_no
   end
 
-  opt.on "-n", "--db-name=DB_NAME",       String,     "New database name (required)" do |db_name|
+  opt.on "-n", "--db-name=DB_NAME",       String,  "New database name (required)" do |db_name|
     @options[:db_name] = db_name
   end
 
-  opt.on "-r", "--region=REGION",         Integer,    "Set ENV['REGION'] (def: NONE)" do |region|
+  opt.on "-r", "--region=REGION",         Integer, "Set ENV['REGION'] (def: NONE)" do |region|
     @options[:region] = region
   end
 
-  opt.on "-m", "--[no-]update",           FalseClass, "bin/update? (default: yes)" do |yes_no|
+  opt.on "-m", "--[no-]update",                    "bin/update? (default: yes)" do |yes_no|
     @options[:update] = yes_no
   end
 
