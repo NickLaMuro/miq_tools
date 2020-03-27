@@ -12,7 +12,8 @@ SPINNER = [ "∙∙∙", "●∙∙", "∙●∙", "∙∙●" ].freeze
   :drop        => false,
   :environment => "development",
   :migrate     => false,
-  :update      => true
+  :update      => true,
+  :err_len     => 100
 }
 
 OptionParser.new do |opt|
@@ -87,6 +88,7 @@ def run_cmd msg, env_or_cmd, cmd = nil
 
   return if cmd.include?("migrate") || @options[:migrate]
 
+  outdata = []
   status  = nil
   spinner = 0
   print "\e[0;1;49m====> \e[1;32;49m#{msg}\e[0m    "
@@ -106,10 +108,15 @@ def run_cmd msg, env_or_cmd, cmd = nil
 
     # Output thread
     #
-    # Currently, just make sure the `out` pipe does not get filled up
+    # Ensure output is being read, and store last N lines incase of error
     #
-    # TODO:  Capture last N of output and display if error
-    output = Thread.new { while out.gets do end }
+    output = Thread.new do
+      new_line = nil
+      while new_line = out.gets do
+        outdata << new_line
+        outdata.shift if outdata.size > @options[:err_len]
+      end
+    end
 
     status = cmd_thr.value
     spin.join
@@ -117,7 +124,7 @@ def run_cmd msg, env_or_cmd, cmd = nil
   end
 
   unless cmd.include? "pg_restore"
-    fail "Error:  #{cmd} did not complete sucessfully!" unless status.success?
+    fail "Error:  #{cmd} did not complete sucessfully!\n\n#{outdata.join("")}" unless status.success?
   end
 ensure
   STDIN.echo = true
