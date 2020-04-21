@@ -11,7 +11,7 @@ Other gems/tools you might need for full functionality of some of the tools:
 * `memory_profiler` (rubygem)
 * `gnuplot`         (cli tool)
 
-A lot of this is just self documentation for myself to look back too, and git
+A lot of this is just self documentation for myself to look back to, and git
 these scripts off my current workstation, but you are free to use and
 distribute these yourself if you find them useful.  Linking back to this repo
 would be nice, but not required.
