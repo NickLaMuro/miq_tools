@@ -96,7 +96,7 @@ def run_cmd msg, env_or_cmd, cmd = nil
   outdata = []
   status  = nil
   spinner = 0
-  print "\e[0;1;49m====> \e[1;32;49m#{msg}\e[0m    "
+  print "\e[0;1;49m====> \e[1;32;49m#{msg}\e[0m  (#{cmd})    "
 
   Open3.popen2e cmd_env, cmd do |stdin, out, cmd_thr|
     # Spinner Thread
