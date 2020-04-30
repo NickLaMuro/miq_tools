@@ -143,6 +143,10 @@ def migrate_database cmd_env
   cmd
 end
 
+puts
+puts @options.inspect
+puts
+
 run_cmd "Bundle update",                 %Q[bin/bundle update]
 run_cmd "Creating database"     cmd_env, migrate_database
 run_cmd "Dumping data into #{db_name}",  %Q[pg_restore -v -U root -j 4 -d #{db_name} "#{db_dump_file}"]
