@@ -91,7 +91,7 @@ def run_cmd msg, env_or_cmd, cmd = nil
   cmd_env = cmd.nil? ? {} : env_or_cmd
   cmd     = env_or_cmd if cmd.nil?
 
-  return if cmd.include?("migrate") || @options[:migrate]
+  return if cmd.include?("migrate") && !@options[:migrate]
 
   outdata = []
   status  = nil
