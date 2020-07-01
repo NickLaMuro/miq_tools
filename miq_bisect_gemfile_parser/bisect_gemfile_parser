@@ -1,0 +1,125 @@
+#!/usr/bin/env ruby
+
+# This is a helper for running a bisect when having to deal with "point in
+# time" issues when bisecting and dealing with git-gems
+#
+# Because our Gemfile use the most recent version of the gem when running a
+# `bundle` and/or `bundle update`, when attempting to do a `git bistect`,
+# dependecies that might be causing the issue are not being checked out in a
+# fashion that represents what the state of things were in the MIQ environment
+# at the point of the checkout.
+#
+# This helper attempts to checkout a proper revision of all of the manageiq git
+# gem dependencies by checking the current revision of the gems in the
+# currently parse Gemfile, and throws a override file in the `bundler.d/`
+# directory which will set the proper overrides.
+#
+# The workflow for using this script is as follows;
+#
+#   * Start `git bisect`
+#   * Run the script
+#     - you can actually chuck this in `bin/` since it is git-ignored)
+#   * Run `bin/bundle update`
+#   * Do what you need to validate the git sha, and move on the the next commit
+#   * Repeat steps 2-4 until you are finished
+#   * Run `rm bundle.d/bisect.rb` to clean up this script (DON'T FORGET!)
+#
+# The last step is important as it will most likely mess with your your master
+# branch.
+#
+
+class GemfilePluginParser
+  GIT_URL_MATCH = /^\w+:\/\/github.com\/ManageIQ\/(manageiq-|miq).*$/.freeze
+
+  class << self
+    def parse
+      new.tap {|i| i.instance_eval { eval File.read "Gemfile" } }
+         .manageiq_plugins
+    end
+  end
+
+  attr_reader :manageiq_plugins
+
+  def initialize
+    @manageiq_plugins = []
+  end
+
+  def gem gem_name, *args
+    hash = args.pop
+    if hash and hash.is_a?(Hash) and (hash[:git] || hash["git"]).to_s =~ GIT_URL_MATCH
+      @manageiq_plugins << {
+        :name   => gem_name,
+        :branch => (hash[:branch] || hash["branch"])
+      }
+    end
+  end
+
+  def __dir__
+    Dir.pwd
+  end
+  def source *args; end;
+  def eval_gemfile *args; end;
+  def group *args
+    yield if block_given?
+  end
+
+  def dependencies
+    []
+  end
+end
+
+base_bisect_rb_content = [
+  'require "shellwords"',
+  'require "time"',
+  '',
+  'class Bundler::Source::Git::GitProxy',
+  '  private',
+  '',
+  '  def find_local_revision',
+  '    allowed_in_path do',
+  '      if ref.include?("@")',
+  '        branch, timestamp = ref.split("@")',
+  '        git("log --format=\'%H\' --before=#{timestamp.gsub(/[\{\}]/,"")} --merges -n1 #{branch}").strip',
+  '      else',
+  '        git("rev-parse --verify #{Shellwords.shellescape(ref)}", true).strip',
+  '      end',
+  '    end',
+  '  end',
+  'end',
+  '',
+  'def bisect_gem_override(name, *args)',
+  '  if dependencies.any? && dependency = dependencies.find { |d| d.name == name }',
+  '    removed_dependency = dependencies.delete(dependency)',
+  '    if removed_dependency.source.kind_of?(Bundler::Source::Git)',
+  '      @sources.send(:source_list_for, removed_dependency.source).delete_if do |other_source|',
+  '        @sources.send(:equal_source?, removed_dependency.source, other_source)',
+  '      end',
+  '    end',
+  '',
+  '    gem name, *args',
+  '  end',
+  'end',
+  '',
+  'bisect_iso_time = `git show -q --format="%ai"`.chomp',
+  '# Time in "hours ago".',
+  '#   example:  "100.hours.ago"',
+  'bisect_time = "#{(Time.now.to_i - Time.parse(bisect_iso_time).to_i) / 60 / 60}.hours.ago"',
+  ''
+]
+
+KNOWN_REPO_CHANGES = {
+  "miq_v2v_ui"   => "miq_v2v_ui_plugin",
+  "manageiq-v2v" => "miq_v2v_ui_plugin"
+}
+
+GemfilePluginParser.parse.each do |plugin_info|
+  plugin_name = plugin_info[:name]
+  override_gem_content  = "bisect_gem_override '#{plugin_name}', "
+  override_gem_content << ":git => 'https://github.com/ManageIQ/#{KNOWN_REPO_CHANGES[plugin_name] || plugin_name}', "
+  override_gem_content << ":ref => \"#{plugin_info[:branch] || 'master'}@{\#{bisect_time}}\""
+
+  base_bisect_rb_content << override_gem_content
+end
+
+# puts base_bisect_rb_content.join("\n")
+File.write 'bundler.d/bisect.rb', base_bisect_rb_content.join("\n") << "\n"
