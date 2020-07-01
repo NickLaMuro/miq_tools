@@ -137,7 +137,7 @@ end
 
 def migrate_database
   cmd  = "bin/rake"
-  cmd += " db:environment:set"  if @options[:rails52]
+  cmd += " db:environment:set"  if @options[:rails52] && @options[:drop]
   cmd += " db:drop"             if @options[:drop]
   cmd += " db:create"
   cmd
