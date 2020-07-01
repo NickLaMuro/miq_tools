@@ -144,7 +144,7 @@ def migrate_database
 end
 
 run_cmd "Bundle update",                 %Q[bin/bundle update]
-run_cmd "Creating database"     cmd_env, migrate_database
+run_cmd "Creating database",    cmd_env, migrate_database
 run_cmd "Dumping data into #{db_name}",  %Q[pg_restore -v -U root -j 4 -d #{db_name} "#{db_dump_file}"]
 run_cmd "Migrating database",   cmd_env, %Q[bin/rake db:migrate]
 run_cmd "Fixing database auth",          %Q[bundle exec tools/fix_auth.rb --v2 --invalid bogus --db #{db_name}]
