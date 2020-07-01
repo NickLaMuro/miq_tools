@@ -44,7 +44,7 @@ OptionParser.new do |opt|
   end
 
   opt.on "-r", "--region=REGION",         Integer, "Set ENV['REGION'] (def: NONE)" do |region|
-    @options[:region] = region
+    @options[:region] = region.to_s
   end
 
   opt.on       "--rails52",               String,  "Assume Rails v5.2" do
