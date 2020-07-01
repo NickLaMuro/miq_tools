@@ -135,7 +135,7 @@ ensure
   STDIN.echo = true
 end
 
-def migrate_database cmd_env
+def migrate_database
   cmd  = "bin/rake"
   cmd += " db:environment:set"  if @options[:rails52]
   cmd += " db:drop"             if @options[:drop]
