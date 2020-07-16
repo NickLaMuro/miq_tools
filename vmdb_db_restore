@@ -91,7 +91,7 @@ def run_cmd msg, env_or_cmd, cmd = nil, &block
   cmd_env = cmd.nil? ? {} : env_or_cmd
   cmd     = env_or_cmd if cmd.nil?
 
-  return if cmd.include?("migrate") && !@options[:migrate]
+  return if cmd.include?("rake db:migrate") && !@options[:migrate]
 
   outdata = []
   status  = nil
@@ -143,7 +143,7 @@ ensure
   STDIN.echo = true
 end
 
-def migrate_database
+def create_database
   cmd  = "bin/rake"
   cmd += " db:environment:set"  if @options[:rails52] && @options[:drop]
   cmd += " db:drop"             if @options[:drop]
@@ -190,7 +190,7 @@ def import_db
 end
 
 run_cmd "Bundle update",                 %Q[bin/bundle update]
-run_cmd "Creating database",    cmd_env, migrate_database
+run_cmd "Creating database",    cmd_env, create_database
 import_db
 run_cmd "Migrating database",   cmd_env, %Q[bin/rake db:migrate]
 run_cmd "Fixing database auth",          %Q[bundle exec tools/fix_auth.rb --v2 --invalid bogus --db #{@db_name}]
