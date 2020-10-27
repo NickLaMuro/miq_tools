@@ -1,0 +1,192 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+
+opts   = {}
+parser = OptionParser.new do |opt|
+  opt.banner = "Usage: #{File.basename $0} [options] logfiles..."
+
+  opt.separator ""
+  opt.separator <<-INFO.gsub(/^ {4}/, "")
+    Parses the given rails log file and matches the request's STARTED and
+    COMPLETED lines to determine how long each request took.
+
+    The processor types have two forms, and one or both can be used at the same
+    time.  Specified by the --processors flag (default is both):
+
+      logger: prints each request URI and it's ms to complete
+      avgs:   prints the average ms for each request type, in table form
+
+    `logfiles` can either be the raw log data, or their gzipped equivalents,
+    and the parser will figure out how to handle them accordingly.
+
+  INFO
+  opt.separator ""
+  opt.separator "Options"
+
+  opt.on("-oOUT", "--out=OUTPUT",            "Set output file (DEF: miq.timings)") do |out|
+    opts[:output_file] = out
+  end
+  opt.on("--processors avgs,logger)", Array, "Specify output processors")          do |list|
+    opts[:processors] = list.map(&:to_sym)
+  end
+  opt.on("-v", "--[no-]verbose", [TrueClass, FalseClass], "Toggle extra debugging (def: false)") do |verbose|
+    options[:verbose] = verbose
+  end
+
+  opt.on("-h",    "--help")       { |out| puts opt; exit }
+end
+parser.parse!(ARGV)
+
+log_files = ARGV[0..-1]
+
+if log_files.empty?
+  puts "Please provide a file(s) to analyze!\n"
+  puts parser.help
+  exit 1
+end
+
+# Defaults
+opts[:output_file] ||= "miq.timings"
+opts[:processors]  ||= [:avgs, :logger]
+
+$: << File.expand_path(File.join("..", "..", "util"), __FILE__)
+require 'multi_file_log_parser'
+
+class TimingsProcessor
+  LOGGER_FMT = "%-6s '%s' %dms".freeze
+  def initialize timing_processors=[]
+    @reporting_types = timing_processors
+    @reporting_types.each {|type| send "#{type}_init" }
+  end
+
+  def report io, verb, url, timing
+    @reporting_types.each {|type| send "#{type}_run", io, verb, url, timing }
+  end
+
+  def finalize io
+    @reporting_types.each {|type| send "#{type}_finish", io }
+  end
+
+  private
+
+  def logger_init; end
+
+  def avgs_init
+    @avgs = {}
+  end
+
+  def logger_run io, verb, url, timing
+    io.puts LOGGER_FMT % [verb, url, timing]
+  end
+
+  def avgs_run io, verb, url, timing
+    key = "#{url} - #{verb}"
+    @avgs[key] ||= { :count => 0, :total => 0}
+    @avgs[key][:count] += 1
+    @avgs[key][:total] += timing.to_i
+  end
+
+  def logger_finish io
+  end
+
+  # Creates a table from the averages
+  def avgs_finish io
+    @avgs.each do |key, metrics|
+      @avgs[key][:avg] = metrics[:total].to_i / metrics[:count].to_i
+    end
+
+    max_url = [@avgs.keys.map(&:size).max.to_i, 4].max + 1
+    max_avg = [@avgs.values.map{|v| v[:avg].to_s.size}.max.to_i, 4].max + 1
+    max_cnt = [@avgs.values.map{|v| v[:count].to_s.size}.max.to_i, 6].max + 1
+
+    io.puts "\n\n\n\n"
+    io.puts [
+      "url".rjust(max_url),
+      "avg".rjust(max_avg),
+      "count".rjust(max_cnt)].join(" | ")
+    io.puts "-" * (max_url + 3 + max_avg + 3 + max_cnt)
+    @avgs.each do |url, metrics|
+      io.puts [
+        url.rjust(max_url),
+        metrics[:avg].to_s.rjust(max_avg),
+        metrics[:count].to_s.rjust(max_cnt)].join(" | ")
+    end
+  rescue => e
+    puts
+    puts @avgs.inspect
+    puts
+    raise e
+  end
+end
+
+BASE_LOG_LINE_REGEXP = Regexp.new [
+  /(?<SEVERITY_CHAR>[A-Z]), \[/,       # 1. severity char
+  /(?<date>[-0-9]*)T/,                 # 2. date
+  /(?<TIME>[0-9:]*\.)/,                # 3. Ttime
+  /(?<MS>[0-9]*) #/,                   # 4. .ms
+  /(?<PID>[0-9]*):/,                   # 5. #pid
+  /(?<THREAD>[a-z0-9]*)\] +/,          # 6. :thread id
+  /[A-Z]{0,5} -- [^:]*: /              # (sev info and msg delim)
+].map(&:source).join
+
+# REGEXP for the "Started " line in the rails logs
+STARTED_LINE_REGEXP = Regexp.new [
+  BASE_LOG_LINE_REGEXP,
+  /Started\s+/,                        # ('Started' match)
+  /(?<HTTP_VERB>[A-Z]+) /,             # 7. HTTP VERB
+  /\"(?<URL>[^"]*)\"/                  # 8. Route URL
+].map(&:source).join
+
+# REGEXP for the "Completed " line in the rails logs
+COMPLETED_LINE_REGEXP = Regexp.new [
+  BASE_LOG_LINE_REGEXP,
+  /Completed.+in /,                    # ('Completed in' match)
+  /(?<REQUEST_DURATION>\d+)ms/         # 7. Request duration
+].map(&:source).join
+
+THREAD           = "THREAD".freeze
+HTTP_VERB        = "HTTP_VERB".freeze
+URL              = "URL".freeze
+REQUEST_DURATION = "REQUEST_DURATION".freeze
+
+request_stack    = {}
+timing_processor = TimingsProcessor.new opts[:processors]
+line_matchers    = {
+  STARTED_LINE_REGEXP   => ->(_, __, match_buffer, ___) {
+    puts "Started:  #{match_buffer.inspect}" if opts[:verbose]
+    request_stack[match_buffer[THREAD]] = {
+      :verb => match_buffer[HTTP_VERB],
+      :url  => match_buffer[URL]
+    }
+  },
+  COMPLETED_LINE_REGEXP => ->(_, out_file, match_buffer, __) {
+    begin
+      puts "Completed:  #{match_buffer.inspect}" if opts[:verbose]
+      request_data = request_stack.delete(match_buffer[THREAD])
+      if request_data
+        time_taken   = match_buffer[REQUEST_DURATION]
+        timing_processor.report out_file[_], request_data[:verb],
+                                request_data[:url], time_taken
+      end
+    rescue => e
+      puts
+      puts request_stack.inspect
+      puts request_data.inspect
+      puts match_buffer.inspect
+      puts
+      raise e
+    end
+  }
+}
+
+
+File.open(opts[:output_file], 'a') do |out_file|
+  parser_options = {
+    :single_file => out_file,
+    :verbose     => opts[:verbose]
+  }
+
+  MultiFileLogParser.parse log_files, parser_options, line_matchers
+  timing_processor.finalize out_file
+end

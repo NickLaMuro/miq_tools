@@ -12,6 +12,7 @@ class MultiFileLogParser
 
     @id_col        = options[:id_col]
     @current_id    = nil
+    @single_file   = options[:single_file]
     @data_file     = {}
     @match_buffer  = {}
     # @id_buffer     = {}
@@ -35,6 +36,7 @@ class MultiFileLogParser
         next unless line_match = valid_line_for(line, regexp)
 
         set_match_buffer_for line_match
+        set_ouput_file_if_needed
         update_current_file_and_current_id
 
         block.call(@current_id, @data_file, @match_buffer, lineno) if block
@@ -99,6 +101,14 @@ class MultiFileLogParser
     end
   end
 
+  def set_ouput_file_if_needed
+    if @single_file
+      @data_file[@current_id] ||= @single_file
+    else
+      update_current_file_and_current_id
+    end
+  end
+
   # Close currently opened file if current_id changed
   #
   # If a new "id" comes up in the match and we have an open file for that id,
@@ -124,7 +134,7 @@ class MultiFileLogParser
       filename  = "#{@match_buffer["_datestamp"]}_#{@current_id}.data"
       filename  = File.join @options[:output_dir], filename
 
-      puts "creating new file:  #{filename}" if true || @options[:verbose]
+      puts "creating new file:  #{filename}" if @options[:verbose]
       @data_file[@current_id] = File.open(filename, :mode => "w")
     end
   end
